@@ -28,7 +28,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, LogicalPosition, Manager, RunEvent, Runtime};
+use tauri::{async_runtime, AppHandle, LogicalPosition, Manager, RunEvent, Runtime};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -121,6 +121,17 @@ pub fn run() {
             let app_handle = app.handle().clone();
             coordinator.bind_app(app_handle);
             coordinator.start_hotkey_listener();
+            if std::env::var("OPENLESS_DEBUG_HOTKEY_ON_START").ok().as_deref() == Some("1") {
+                let debug_coord = Arc::clone(&coordinator);
+                async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+                    log::info!("[debug] injecting startup hotkey press");
+                    let _ = debug_coord.debug_hotkey_pressed().await;
+                    tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+                    debug_coord.cancel_dictation();
+                    log::info!("[debug] startup hotkey injection completed");
+                });
+            }
 
             Ok(())
         })

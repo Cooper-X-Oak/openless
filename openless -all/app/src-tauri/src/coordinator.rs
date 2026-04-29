@@ -137,6 +137,16 @@ impl Coordinator {
         cancel_session(&self.inner);
     }
 
+    pub async fn debug_hotkey_pressed(&self) -> Result<(), String> {
+        handle_pressed(&self.inner).await;
+        Ok(())
+    }
+
+    pub async fn debug_hotkey_released(&self) -> Result<(), String> {
+        handle_released(&self.inner).await;
+        Ok(())
+    }
+
     pub async fn repolish(&self, raw_text: String, mode: PolishMode) -> Result<String, String> {
         let hotwords = enabled_phrases(&self.inner);
         polish_text(&raw_text, mode, &hotwords)

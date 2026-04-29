@@ -76,8 +76,6 @@ pub fn run() {
                 }
             }
 
-            show_main_window(app.handle());
-
             // 启动时主动弹 Accessibility 授权框（与 Swift `AppDelegate` 行为一致）。
             // 用户首次必看到系统提示；已授权则静默返回。
             #[cfg(target_os = "macos")]

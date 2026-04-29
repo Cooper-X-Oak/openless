@@ -274,16 +274,37 @@ interface CredentialFieldProps {
 function CredentialField({ label, account, placeholder, mono, mask }: CredentialFieldProps) {
   const [value, setValue] = useState('');
   const [revealed, setRevealed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'saveError' | 'copied' | 'copyError'>('idle');
 
   useEffect(() => {
-    readCredential(account).then(v => setValue(v ?? ''));
+    let cancelled = false;
+    setLoaded(false);
+    setDirty(false);
+    readCredential(account)
+      .then(v => {
+        if (cancelled) return;
+        setValue(v ?? '');
+        setLoaded(true);
+      })
+      .catch(error => {
+        if (cancelled) return;
+        console.error('[settings] failed to read credential', account, error);
+        setLoaded(true);
+        setStatus('saveError');
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [account]);
 
   const onBlur = async () => {
+    if (!loaded || !dirty) return;
     setStatus('saving');
     try {
       await setCredential(account, value);
+      setDirty(false);
       setStatus('saved');
     } catch (error) {
       console.error('[settings] failed to save credential', account, error);
@@ -316,8 +337,12 @@ function CredentialField({ label, account, placeholder, mono, mask }: Credential
           type={inputType}
           value={value}
           placeholder={placeholder}
-          onChange={e => setValue(e.target.value)}
+          onChange={e => {
+            setValue(e.target.value);
+            setDirty(true);
+          }}
           onBlur={onBlur}
+          disabled={!loaded}
           style={{ ...inputStyle, fontFamily: mono ? 'var(--ol-font-mono)' : 'inherit' }}
         />
         {mask && (

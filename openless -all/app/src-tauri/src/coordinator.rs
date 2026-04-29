@@ -217,6 +217,7 @@ fn hotkey_bridge_loop(inner: Arc<Inner>, rx: mpsc::Receiver<HotkeyEvent>) {
 async fn handle_pressed(inner: &Arc<Inner>) {
     let mode = inner.prefs.get().hotkey.mode;
     let phase = inner.state.lock().phase;
+    log::info!("[coord] hotkey pressed mode={mode:?} phase={phase:?}");
     match (mode, phase) {
         (HotkeyMode::Toggle, SessionPhase::Idle) => {
             let _ = begin_session(inner).await;
@@ -233,8 +234,9 @@ async fn handle_pressed(inner: &Arc<Inner>) {
 
 async fn handle_released(inner: &Arc<Inner>) {
     let mode = inner.prefs.get().hotkey.mode;
+    let phase = inner.state.lock().phase;
+    log::info!("[coord] hotkey released mode={mode:?} phase={phase:?}");
     if mode == HotkeyMode::Hold {
-        let phase = inner.state.lock().phase;
         if phase == SessionPhase::Listening {
             let _ = end_session(inner).await;
         }
@@ -251,6 +253,20 @@ async fn begin_session(inner: &Arc<Inner>) -> Result<(), String> {
         }
         state.phase = SessionPhase::Starting;
         state.started_at = Instant::now();
+    }
+
+    if let Err(message) = ensure_asr_credentials() {
+        log::warn!("[coord] ASR credential gate failed: {message}");
+        emit_capsule(
+            inner,
+            CapsuleState::Error,
+            0.0,
+            0,
+            Some(message.clone()),
+            None,
+        );
+        inner.state.lock().phase = SessionPhase::Idle;
+        return Err(message);
     }
 
     if let Err(message) = ensure_microphone_permission(inner) {
@@ -484,6 +500,15 @@ fn ensure_microphone_permission(inner: &Arc<Inner>) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("需要麦克风权限，当前状态: {requested:?}"))
+    }
+}
+
+fn ensure_asr_credentials() -> Result<(), String> {
+    let creds = read_volc_credentials();
+    if creds.app_id.trim().is_empty() || creds.access_token.trim().is_empty() {
+        Err("请先在设置中填写火山引擎 ASR App Key 和 Access Key".to_string())
+    } else {
+        Ok(())
     }
 }
 

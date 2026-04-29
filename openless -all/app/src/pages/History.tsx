@@ -28,7 +28,8 @@ export function History() {
   const [items, setItems] = useState<DictationSession[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const hotkeyLabel = detectOS() === 'win' ? '右 Alt' : '右 Option';
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const hotkeyLabel = detectOS() === 'win' ? '右 Control' : '右 Option';
 
   const refresh = async () => {
     const data = await listHistory();
@@ -66,9 +67,19 @@ export function History() {
     setItems(prev => prev.filter(s => s.id !== item.id));
   };
 
-  const onCopy = () => {
+  const onCopy = async () => {
     if (!item) return;
-    navigator.clipboard?.writeText(item.finalText);
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard API unavailable');
+      }
+      await navigator.clipboard.writeText(item.finalText);
+      setCopyStatus('copied');
+    } catch (error) {
+      console.error('[history] failed to copy final text', error);
+      setCopyStatus('failed');
+    }
+    window.setTimeout(() => setCopyStatus('idle'), 1600);
   };
 
   return (
@@ -163,6 +174,17 @@ export function History() {
                   <Btn icon="trash" variant="ghost" size="sm" onClick={onDelete}>删除</Btn>
                 </div>
               </div>
+              {copyStatus !== 'idle' && (
+                <div
+                  style={{
+                    marginBottom: 10,
+                    fontSize: 11.5,
+                    color: copyStatus === 'copied' ? 'var(--ol-ok)' : 'var(--ol-warn)',
+                  }}
+                >
+                  {copyStatus === 'copied' ? '已复制到剪贴板' : '复制失败，请手动选中文本复制'}
+                </div>
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div style={{ padding: 14, border: '0.5px solid var(--ol-line)', borderRadius: 10, background: 'var(--ol-surface-2)' }}>
                   <Pill size="sm" tone="outline" style={{ marginBottom: 10 }}>原文</Pill>

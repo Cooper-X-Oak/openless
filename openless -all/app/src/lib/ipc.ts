@@ -35,7 +35,7 @@ export async function invokeOrMock<T>(
 
 // ── Mock fixtures ──────────────────────────────────────────────────────
 const mockSettings: UserPreferences = {
-  hotkey: { trigger: 'rightOption', mode: 'toggle' },
+  hotkey: { trigger: 'rightControl', mode: 'toggle' },
   defaultMode: 'structured',
   enabledModes: ['raw', 'light', 'structured', 'formal'],
   launchAtLogin: false,
@@ -196,8 +196,13 @@ export async function openExternal(url: string): Promise<void> {
     window.open(url, '_blank', 'noopener,noreferrer');
     return;
   }
-  const { open } = await import('@tauri-apps/plugin-shell');
-  await open(url);
+  try {
+    const { open } = await import('@tauri-apps/plugin-shell');
+    await open(url);
+  } catch (error) {
+    console.error('[ipc] failed to open external URL', url, error);
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
 }
 
 export { isTauri };

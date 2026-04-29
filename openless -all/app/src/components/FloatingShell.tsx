@@ -16,7 +16,7 @@ import { APP_VERSION_LABEL } from '../lib/appVersion';
 import { getCredentials, openExternal } from '../lib/ipc';
 import { OL_DATA } from '../lib/mockData';
 import {
-  PROVIDER_SETUP_PROMPT_SEEN_KEY,
+  PROVIDER_SETUP_PROMPT_DEFERRED_KEY,
   shouldShowProviderSetupPrompt,
 } from '../lib/providerSetup';
 import type { SettingsSectionId } from '../pages/Settings';
@@ -56,14 +56,14 @@ function FloatingShellBody({ os, initialTab, initialSettings }: { os: OS; initia
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSectionId | undefined>();
   const [providerPromptOpen, setProviderPromptOpen] = useState(false);
   const Page = (NAV.find((n) => n.id === currentTab) ?? NAV[0]).cmp;
-  const hotkeyLabel = os === 'win' ? '右 Alt' : '右 Option';
+  const hotkeyLabel = os === 'win' ? '右 Control' : '右 Option';
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const credentials = await getCredentials();
-      const promptSeenValue = window.localStorage.getItem(PROVIDER_SETUP_PROMPT_SEEN_KEY);
-      if (!cancelled && shouldShowProviderSetupPrompt(credentials, promptSeenValue)) {
+      const promptDeferredValue = window.sessionStorage.getItem(PROVIDER_SETUP_PROMPT_DEFERRED_KEY);
+      if (!cancelled && shouldShowProviderSetupPrompt(credentials, promptDeferredValue)) {
         setProviderPromptOpen(true);
       }
     })();
@@ -72,8 +72,8 @@ function FloatingShellBody({ os, initialTab, initialSettings }: { os: OS; initia
     };
   }, []);
 
-  const rememberProviderPrompt = () => {
-    window.localStorage.setItem(PROVIDER_SETUP_PROMPT_SEEN_KEY, '1');
+  const deferProviderPrompt = () => {
+    window.sessionStorage.setItem(PROVIDER_SETUP_PROMPT_DEFERRED_KEY, '1');
     setProviderPromptOpen(false);
   };
 
@@ -83,7 +83,7 @@ function FloatingShellBody({ os, initialTab, initialSettings }: { os: OS; initia
   };
 
   const openProviderSettings = () => {
-    rememberProviderPrompt();
+    deferProviderPrompt();
     openSettings('提供商');
   };
 
@@ -275,7 +275,7 @@ function FloatingShellBody({ os, initialTab, initialSettings }: { os: OS; initia
 
       {providerPromptOpen && (
         <ProviderSetupPrompt
-          onLater={rememberProviderPrompt}
+          onLater={deferProviderPrompt}
           onOpenSettings={openProviderSettings}
         />
       )}

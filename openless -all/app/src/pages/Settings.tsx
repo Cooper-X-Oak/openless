@@ -114,9 +114,9 @@ const MAC_TRIGGER_OPTIONS: HotkeyTrigger[] = [
 ];
 
 const WIN_TRIGGER_OPTIONS: HotkeyTrigger[] = [
-  'rightAlt',
   'rightControl',
   'leftControl',
+  'rightAlt',
   'rightCommand',
 ];
 
@@ -274,16 +274,37 @@ interface CredentialFieldProps {
 function CredentialField({ label, account, placeholder, mono, mask }: CredentialFieldProps) {
   const [value, setValue] = useState('');
   const [revealed, setRevealed] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'saveError' | 'copied' | 'copyError'>('idle');
 
   useEffect(() => {
     readCredential(account).then(v => setValue(v ?? ''));
   }, [account]);
 
   const onBlur = async () => {
-    await setCredential(account, value);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1200);
+    setStatus('saving');
+    try {
+      await setCredential(account, value);
+      setStatus('saved');
+    } catch (error) {
+      console.error('[settings] failed to save credential', account, error);
+      setStatus('saveError');
+    }
+    window.setTimeout(() => setStatus('idle'), 1600);
+  };
+
+  const onCopy = async () => {
+    if (!value) return;
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard API unavailable');
+      }
+      await navigator.clipboard.writeText(value);
+      setStatus('copied');
+    } catch (error) {
+      console.error('[settings] failed to copy credential', account, error);
+      setStatus('copyError');
+    }
+    window.setTimeout(() => setStatus('idle'), 1600);
   };
 
   const inputType = mask && !revealed ? 'password' : 'text';
@@ -309,15 +330,29 @@ function CredentialField({ label, account, placeholder, mono, mask }: Credential
           </button>
         )}
         <button
-          onClick={() => navigator.clipboard?.writeText(value)}
+          onClick={onCopy}
           title="复制"
           style={iconBtnStyle}
           disabled={!value}
         >
           <Icon name="copy" size={14} />
         </button>
-        {saved && (
-          <span style={{ fontSize: 11, color: 'var(--ol-ok)', whiteSpace: 'nowrap' }}>已保存</span>
+        {status !== 'idle' && (
+          <span
+            style={{
+              fontSize: 11,
+              color: status.endsWith('Error') ? 'var(--ol-warn)' : 'var(--ol-ok)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {status === 'saving'
+              ? '保存中'
+              : status === 'saved'
+                ? '已保存'
+                : status === 'copied'
+                  ? '已复制'
+                  : '操作失败'}
+          </span>
         )}
       </div>
     </SettingRow>
@@ -346,7 +381,7 @@ function ShortcutsSection() {
     ? '所有快捷键全局生效。若无响应，请在权限页查看全局快捷键监听状态。'
     : '所有快捷键全局生效，需要在权限设置中开启辅助功能。';
   const rows: Array<[string, string]> = [
-    ['开始 / 停止录音', os === 'win' ? '右 Alt' : '右 Option'],
+    ['开始 / 停止录音', os === 'win' ? '右 Control' : '右 Option'],
     ['取消本次录音', 'Esc'],
     ['胶囊确认插入', '点击右侧 ✓'],
     ['切换上一次风格', os === 'win' ? '暂未支持' : '⌘ ⇧ S'],
@@ -381,37 +416,46 @@ function PermissionsSection() {
     ? 'OpenLess 需要麦克风可用，并依赖全局快捷键监听状态判断 Windows 侧是否正常工作。'
     : 'OpenLess 需要以下系统权限才能正常工作。授权后通常需要完全退出 App 重启一次才生效。';
 
-  const refresh = async () => {
+  const refreshPermissions = async () => {
     const [a, m] = await Promise.all([
       checkAccessibilityPermission(),
       checkMicrophonePermission(),
     ]);
     setAccessibility(a);
     setMicrophone(m);
+  };
+
+  const refreshHotkey = async () => {
     setHotkey(await getHotkeyStatus());
   };
 
   useEffect(() => {
-    refresh();
-    const id = window.setInterval(refresh, 1000);
-    // 用户从系统设置切回来时立刻刷新（不等下一个 1s tick）
-    const onFocus = () => refresh();
+    refreshPermissions();
+    refreshHotkey();
+    const hotkeyId = window.setInterval(refreshHotkey, 1000);
+    // 麦克风检查会短暂打开输入流，避免每秒探测导致隐私指示器频繁闪烁。
+    const permissionId = window.setInterval(refreshPermissions, 10000);
+    const onFocus = () => {
+      refreshPermissions();
+      refreshHotkey();
+    };
     window.addEventListener('focus', onFocus);
     return () => {
-      window.clearInterval(id);
+      window.clearInterval(hotkeyId);
+      window.clearInterval(permissionId);
       window.removeEventListener('focus', onFocus);
     };
   }, []);
 
   const reRequestAccessibility = async () => {
     await requestAccessibilityPermission();
-    refresh();
+    refreshPermissions();
   };
 
   const reRequestMicrophone = async () => {
     if (microphone === 'denied' || microphone === 'restricted') {
       await openSystemSettings('microphone');
-      refresh();
+      refreshPermissions();
       return;
     }
     const status = await requestMicrophonePermission();
@@ -419,7 +463,7 @@ function PermissionsSection() {
     if (status === 'denied' || status === 'restricted') {
       await openSystemSettings('microphone');
     }
-    refresh();
+    refreshPermissions();
   };
 
   return (

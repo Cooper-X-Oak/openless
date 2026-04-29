@@ -25,7 +25,7 @@ export function Overview({ onOpenHistory }: OverviewProps) {
     arkConfigured: false,
   });
   const os = detectOS();
-  const hotkeyLabel = os === 'win' ? '右 Alt' : '右 Option';
+  const hotkeyLabel = os === 'win' ? '右 Control' : '右 Option';
 
   useEffect(() => {
     listHistory().then(setHistory);

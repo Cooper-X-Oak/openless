@@ -121,6 +121,9 @@ pub fn run() {
             let app_handle = app.handle().clone();
             coordinator.bind_app(app_handle);
             coordinator.start_hotkey_listener();
+            if std::env::var("OPENLESS_SHOW_MAIN_ON_START").ok().as_deref() == Some("1") {
+                show_main_window(app.handle());
+            }
             if std::env::var("OPENLESS_DEBUG_HOTKEY_ON_START").ok().as_deref() == Some("1") {
                 let debug_coord = Arc::clone(&coordinator);
                 async_runtime::spawn(async move {

@@ -17,7 +17,7 @@ export function App({ isCapsule }: AppProps) {
   }
 
   const os = detectOS();
-  // Windows 启动时不要用权限探测门控首屏；麦克风探测会短暂打开输入流，容易造成白屏等待。
+  // Windows 启动不应被权限探测阻塞首屏。
   const [gate, setGate] = useState<Gate>(isTauri && os !== 'win' ? 'checking' : 'ready');
 
   useEffect(() => {

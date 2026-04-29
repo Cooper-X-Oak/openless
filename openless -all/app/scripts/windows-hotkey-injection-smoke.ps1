@@ -1,9 +1,14 @@
 param(
-  [string]$ExePath = "$env:TEMP\openless-windows-gnu\src-tauri\target\x86_64-pc-windows-gnu\release\openless.exe",
+  [string]$ExePath = "",
   [int]$TimeoutSeconds = 20
 )
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($ExePath)) {
+  $appRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+  $ExePath = Join-Path $appRoot ".artifacts\windows-gnu\dev\openless.exe"
+}
 
 function Wait-LogPattern($Path, $Pattern, $Since, $TimeoutSeconds) {
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)

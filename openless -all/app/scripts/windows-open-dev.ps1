@@ -1,8 +1,13 @@
 param(
-  [string]$ExePath = "$env:TEMP\openless-windows-gnu\src-tauri\target\x86_64-pc-windows-gnu\release\openless.exe"
+  [string]$ExePath = ""
 )
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($ExePath)) {
+  $appRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+  $ExePath = Join-Path $appRoot ".artifacts\windows-gnu\dev\openless.exe"
+}
 
 Add-Type @"
 using System;
@@ -41,7 +46,13 @@ if (-not (Test-Path $ExePath)) {
   throw "OpenLess executable not found: $ExePath. Run scripts/windows-build-gnu.ps1 first."
 }
 
-$process = Start-Process -FilePath $ExePath -PassThru
+$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:USERPROFILE\scoop\persist\rustup\.cargo\bin;$env:USERPROFILE\scoop\apps\rustup\current\.cargo\bin;$env:USERPROFILE\scoop\apps\mingw\current\bin;$env:PATH"
+$env:OPENLESS_SHOW_MAIN_ON_START = "1"
+try {
+  $process = Start-Process -FilePath $ExePath -WorkingDirectory (Split-Path $ExePath -Parent) -PassThru
+} finally {
+  Remove-Item Env:OPENLESS_SHOW_MAIN_ON_START -ErrorAction SilentlyContinue
+}
 $deadline = (Get-Date).AddSeconds(10)
 
 while ((Get-Date) -lt $deadline) {

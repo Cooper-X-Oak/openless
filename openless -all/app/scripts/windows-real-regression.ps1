@@ -1,5 +1,5 @@
 param(
-  [string]$ExePath = "$env:TEMP\openless-windows-gnu\src-tauri\target\x86_64-pc-windows-gnu\release\openless.exe",
+  [string]$ExePath = "",
   [int]$StartupTimeoutSeconds = 12,
   [int]$PhysicalHotkeyTimeoutSeconds = 45,
   [switch]$RequireCredentials,
@@ -9,6 +9,11 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($ExePath)) {
+  $appRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+  $ExePath = Join-Path $appRoot ".artifacts\windows-gnu\dev\openless.exe"
+}
 
 function Test-CredentialValue($Value) {
   return ($null -ne $Value) -and ($Value -is [string]) -and ($Value.Trim().Length -gt 0)

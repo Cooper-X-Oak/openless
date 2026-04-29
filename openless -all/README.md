@@ -98,6 +98,17 @@ Generated GNU artifacts:
 - Text insertion through `Ctrl+V` is treated as copy fallback unless the app can
   confirm insertion.
 
+For a local smoke test of the packaged executable:
+
+```powershell
+cd app
+powershell -ExecutionPolicy Bypass -File .\scripts\windows-runtime-smoke.ps1
+```
+
+This checks that the packaged app starts, the process responds, and the global
+hotkey listener installs. Real transcription still requires configured
+Volcengine ASR credentials and a physical hotkey press.
+
 ## Release Signing
 
 Tagged releases (`v*-tauri`) must be Developer ID signed and notarized so users can download and open the macOS app without manually removing quarantine attributes.

@@ -128,7 +128,6 @@ try {
   }
 } finally {
   Get-Process openless -ErrorAction SilentlyContinue | Stop-Process -Force
-  Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
 }
 
 Write-Host ""

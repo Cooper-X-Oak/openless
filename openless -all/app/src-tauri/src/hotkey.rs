@@ -317,6 +317,9 @@ mod platform {
         WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
     };
 
+    const LLKHF_INJECTED: u32 = 0x0000_0010;
+    const ACCEPT_INJECTED_ENV: &str = "OPENLESS_ACCEPT_SYNTHETIC_HOTKEY_EVENTS";
+
     struct HookContext {
         shared: Arc<Shared>,
         tx: Sender<HotkeyEvent>,
@@ -395,10 +398,13 @@ mod platform {
                     is_down
                 );
             }
-            if let Some(context_lock) = HOOK_CONTEXT.get() {
-                if let Some(context) = context_lock.lock().expect("hotkey context poisoned").as_ref()
-                {
-                    dispatch_key_event(context, event.vkCode, is_down);
+            if event.flags.0 & LLKHF_INJECTED == 0 || accept_injected_events() {
+                if let Some(context_lock) = HOOK_CONTEXT.get() {
+                    if let Some(context) =
+                        context_lock.lock().expect("hotkey context poisoned").as_ref()
+                    {
+                        dispatch_key_event(context, event.vkCode, is_down);
+                    }
                 }
             }
         }
@@ -441,6 +447,10 @@ mod platform {
             HotkeyTrigger::RightCommand => VK_RWIN,
             HotkeyTrigger::Fn => VIRTUAL_KEY(0xFF),
         }
+    }
+
+    fn accept_injected_events() -> bool {
+        std::env::var(ACCEPT_INJECTED_ENV).ok().as_deref() == Some("1")
     }
 }
 

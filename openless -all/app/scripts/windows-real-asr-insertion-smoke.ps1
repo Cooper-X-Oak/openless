@@ -278,7 +278,6 @@ function Stop-BrowserProfileProcesses($ProfilePath) {
 function Start-InputTarget($TargetName) {
   $startedAt = Get-Date
   if ($TargetName -eq "notepad") {
-    Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Process notepad.exe | Out-Null
     $process = Wait-ProcessWindow "notepad" $startedAt 15
     if (-not (Focus-Window $process)) {
@@ -343,6 +342,7 @@ Remove-Item -LiteralPath $logPath -Force -ErrorAction SilentlyContinue
 
 Write-Host "== Real ASR + insertion fallback smoke ($Target) =="
 $env:OPENLESS_SHOW_MAIN_ON_START = "1"
+$env:OPENLESS_ACCEPT_SYNTHETIC_HOTKEY_EVENTS = "1"
 if ($DebugHotkeyEvents) {
   $env:OPENLESS_DEBUG_HOTKEY_EVENTS = "1"
 }
@@ -350,6 +350,7 @@ try {
   $openless = Start-Process -FilePath $ExePath -WorkingDirectory (Split-Path $ExePath -Parent) -PassThru
 } finally {
   Remove-Item Env:OPENLESS_SHOW_MAIN_ON_START -ErrorAction SilentlyContinue
+  Remove-Item Env:OPENLESS_ACCEPT_SYNTHETIC_HOTKEY_EVENTS -ErrorAction SilentlyContinue
   Remove-Item Env:OPENLESS_DEBUG_HOTKEY_EVENTS -ErrorAction SilentlyContinue
 }
 

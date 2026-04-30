@@ -129,14 +129,15 @@ function Wait-ProcessWindow($ProcessName, $After, $TimeoutSeconds) {
 $logPath = Join-Path $env:LOCALAPPDATA "OpenLess\Logs\openless.log"
 Remove-Item -LiteralPath $logPath -Force -ErrorAction SilentlyContinue
 Get-Process openless -ErrorAction SilentlyContinue | Stop-Process -Force
-Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
 
 Write-Host "== Windows OS hotkey hook smoke =="
 $env:OPENLESS_SHOW_MAIN_ON_START = "1"
+$env:OPENLESS_ACCEPT_SYNTHETIC_HOTKEY_EVENTS = "1"
 try {
-$process = Start-Process -FilePath $ExePath -WorkingDirectory (Split-Path $ExePath -Parent) -PassThru
+  $process = Start-Process -FilePath $ExePath -WorkingDirectory (Split-Path $ExePath -Parent) -PassThru
 } finally {
   Remove-Item Env:OPENLESS_SHOW_MAIN_ON_START -ErrorAction SilentlyContinue
+  Remove-Item Env:OPENLESS_ACCEPT_SYNTHETIC_HOTKEY_EVENTS -ErrorAction SilentlyContinue
 }
 
 $notepad = $null
@@ -176,7 +177,6 @@ try {
     Stop-Process -Id $notepad.Id -Force -ErrorAction SilentlyContinue
   }
   Get-Process openless -ErrorAction SilentlyContinue | Stop-Process -Force
-  Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
 }
 
 Write-Host "Windows OS hotkey hook smoke passed."

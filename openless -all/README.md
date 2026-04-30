@@ -80,8 +80,13 @@ scoop install rustup mingw
 rustup toolchain install stable-x86_64-pc-windows-gnu
 rustup target add x86_64-pc-windows-gnu
 powershell -ExecutionPolicy Bypass -File .\scripts\windows-preflight.ps1 -Toolchain gnu
+powershell -ExecutionPolicy Bypass -File .\scripts\windows-build-gnu.ps1 -CheckOnly
 powershell -ExecutionPolicy Bypass -File .\scripts\windows-build-gnu.ps1
 ```
+
+`-CheckOnly` runs `cargo check` through the same no-space mirror as the full GNU
+build. Do not call GNU `cargo check` directly from `openless -all`; MinGW
+`dlltool` can fail when Rust passes a temporary prefix containing spaces.
 
 Generated GNU artifacts:
 

@@ -1,7 +1,9 @@
+[CmdletBinding()]
 param(
   [string]$MirrorRoot = "$env:TEMP\openless-windows-gnu",
   [string]$ArtifactsRoot = "",
-  [switch]$KeepMirror
+  [switch]$KeepMirror,
+  [switch]$CheckOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,30 +43,48 @@ function Resolve-WebView2Loader {
   return $loader.FullName
 }
 
+function Invoke-CheckedCommand($Command, [string[]]$Arguments) {
+  & $Command @Arguments
+  if ($LASTEXITCODE -ne 0) {
+    throw "$Command $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
+  }
+}
+
 Push-Location $buildRoot
 try {
-  if (-not (Test-Path "node_modules")) {
-    npm ci
+  if ($CheckOnly) {
+    if (-not (Test-Path "node_modules")) {
+      Invoke-CheckedCommand "npm" @("ci")
+    }
+    Invoke-CheckedCommand "npm" @("run", "build")
+    Invoke-CheckedCommand "cargo" @("check", "--manifest-path", "src-tauri\Cargo.toml", "--target", "x86_64-pc-windows-gnu")
+  } elseif (-not (Test-Path "node_modules")) {
+    Invoke-CheckedCommand "npm" @("ci")
   }
-  npm run tauri build -- --target x86_64-pc-windows-gnu --no-bundle
-  $releaseRoot = Join-Path $buildRoot "src-tauri\target\x86_64-pc-windows-gnu\release"
-  $artifactDevRoot = Join-Path $ArtifactsRoot "dev"
-  New-Item -ItemType Directory -Force -Path $artifactDevRoot | Out-Null
-  Copy-Item -LiteralPath (Join-Path $releaseRoot "openless.exe") -Destination (Join-Path $artifactDevRoot "openless.exe") -Force
-  Copy-Item -LiteralPath (Resolve-WebView2Loader) -Destination (Join-Path $artifactDevRoot "WebView2Loader.dll") -Force
 
-  npm run tauri build -- --target x86_64-pc-windows-gnu --bundles msi nsis
+  if (-not $CheckOnly) {
+    Invoke-CheckedCommand "npm" @("run", "tauri", "build", "--", "--target", "x86_64-pc-windows-gnu", "--no-bundle")
+    $releaseRoot = Join-Path $buildRoot "src-tauri\target\x86_64-pc-windows-gnu\release"
+    $artifactDevRoot = Join-Path $ArtifactsRoot "dev"
+    New-Item -ItemType Directory -Force -Path $artifactDevRoot | Out-Null
+    Copy-Item -LiteralPath (Join-Path $releaseRoot "openless.exe") -Destination (Join-Path $artifactDevRoot "openless.exe") -Force
+    Copy-Item -LiteralPath (Resolve-WebView2Loader) -Destination (Join-Path $artifactDevRoot "WebView2Loader.dll") -Force
+
+    Invoke-CheckedCommand "npm" @("run", "tauri", "build", "--", "--target", "x86_64-pc-windows-gnu", "--bundles", "msi", "nsis")
+  }
 } finally {
   Pop-Location
 }
 
-$releaseRoot = Join-Path $buildRoot "src-tauri\target\x86_64-pc-windows-gnu\release"
-$artifactReleaseRoot = Join-Path $ArtifactsRoot "release"
-New-Item -ItemType Directory -Force -Path $artifactReleaseRoot | Out-Null
-Remove-Item -LiteralPath (Join-Path $artifactReleaseRoot "openless.exe") -Force -ErrorAction SilentlyContinue
+if (-not $CheckOnly) {
+  $releaseRoot = Join-Path $buildRoot "src-tauri\target\x86_64-pc-windows-gnu\release"
+  $artifactReleaseRoot = Join-Path $ArtifactsRoot "release"
+  New-Item -ItemType Directory -Force -Path $artifactReleaseRoot | Out-Null
+  Remove-Item -LiteralPath (Join-Path $artifactReleaseRoot "openless.exe") -Force -ErrorAction SilentlyContinue
 
-if (Test-Path (Join-Path $releaseRoot "bundle")) {
-  Copy-Item -LiteralPath (Join-Path $releaseRoot "bundle") -Destination $artifactReleaseRoot -Recurse -Force
+  if (Test-Path (Join-Path $releaseRoot "bundle")) {
+    Copy-Item -LiteralPath (Join-Path $releaseRoot "bundle") -Destination $artifactReleaseRoot -Recurse -Force
+  }
 }
 
 if ($usedMirror -and (-not $KeepMirror)) {
@@ -80,7 +100,11 @@ if ($usedMirror -and (-not $KeepMirror)) {
 }
 
 Write-Host ""
-Write-Host "Windows GNU artifacts:"
-Write-Host "$ArtifactsRoot\dev\openless.exe"
-Write-Host "$artifactReleaseRoot\bundle\msi"
-Write-Host "$artifactReleaseRoot\bundle\nsis"
+if ($CheckOnly) {
+  Write-Host "Windows GNU cargo check passed."
+} else {
+  Write-Host "Windows GNU artifacts:"
+  Write-Host "$ArtifactsRoot\dev\openless.exe"
+  Write-Host "$artifactReleaseRoot\bundle\msi"
+  Write-Host "$artifactReleaseRoot\bundle\nsis"
+}

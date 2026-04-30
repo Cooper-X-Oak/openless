@@ -46,6 +46,16 @@ if (-not (Test-Path $ExePath)) {
   throw "OpenLess executable not found: $ExePath. Run scripts/windows-build-gnu.ps1 first."
 }
 
+if (-not (Test-Path (Join-Path (Split-Path $ExePath -Parent) "WebView2Loader.dll"))) {
+  throw "WebView2Loader.dll not found beside $ExePath. Run scripts/windows-build-gnu.ps1 again."
+}
+
+if (-not $env:SystemDrive) {
+  $env:SystemDrive = "C:"
+}
+if (-not $env:ProgramData) {
+  $env:ProgramData = Join-Path $env:SystemDrive "ProgramData"
+}
 $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:USERPROFILE\scoop\persist\rustup\.cargo\bin;$env:USERPROFILE\scoop\apps\rustup\current\.cargo\bin;$env:USERPROFILE\scoop\apps\mingw\current\bin;$env:PATH"
 $env:OPENLESS_SHOW_MAIN_ON_START = "1"
 try {

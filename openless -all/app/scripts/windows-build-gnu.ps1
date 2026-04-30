@@ -29,6 +29,18 @@ $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:USERPROFILE\scoop\persist\rustup\.
 $env:RUSTUP_TOOLCHAIN = "stable-x86_64-pc-windows-gnu"
 $env:CARGO_BUILD_TARGET = "x86_64-pc-windows-gnu"
 
+function Resolve-WebView2Loader {
+  $cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE ".cargo" }
+  $registrySrc = Join-Path $cargoHome "registry\src"
+  $loader = Get-ChildItem -Path $registrySrc -Recurse -Filter WebView2Loader.dll -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -match "\\x64\\WebView2Loader\.dll$" } |
+    Select-Object -First 1
+  if ($null -eq $loader) {
+    throw "WebView2Loader.dll x64 not found under $registrySrc"
+  }
+  return $loader.FullName
+}
+
 Push-Location $buildRoot
 try {
   if (-not (Test-Path "node_modules")) {
@@ -39,6 +51,7 @@ try {
   $artifactDevRoot = Join-Path $ArtifactsRoot "dev"
   New-Item -ItemType Directory -Force -Path $artifactDevRoot | Out-Null
   Copy-Item -LiteralPath (Join-Path $releaseRoot "openless.exe") -Destination (Join-Path $artifactDevRoot "openless.exe") -Force
+  Copy-Item -LiteralPath (Resolve-WebView2Loader) -Destination (Join-Path $artifactDevRoot "WebView2Loader.dll") -Force
 
   npm run tauri build -- --target x86_64-pc-windows-gnu --bundles msi nsis
 } finally {

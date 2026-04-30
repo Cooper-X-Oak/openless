@@ -15,6 +15,13 @@ if ([string]::IsNullOrWhiteSpace($ExePath)) {
   $ExePath = Join-Path $appRoot ".artifacts\windows-gnu\dev\openless.exe"
 }
 
+if (-not $env:SystemDrive) {
+  $env:SystemDrive = "C:"
+}
+if (-not $env:ProgramData) {
+  $env:ProgramData = Join-Path $env:SystemDrive "ProgramData"
+}
+
 function Test-CredentialValue($Value) {
   return ($null -ne $Value) -and ($Value -is [string]) -and ($Value.Trim().Length -gt 0)
 }

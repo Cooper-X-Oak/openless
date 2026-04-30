@@ -10,6 +10,13 @@ if ([string]::IsNullOrWhiteSpace($ExePath)) {
   $ExePath = Join-Path $appRoot ".artifacts\windows-gnu\dev\openless.exe"
 }
 
+if (-not $env:SystemDrive) {
+  $env:SystemDrive = "C:"
+}
+if (-not $env:ProgramData) {
+  $env:ProgramData = Join-Path $env:SystemDrive "ProgramData"
+}
+
 function Wait-LogPattern($Path, $Pattern, $Since, $TimeoutSeconds) {
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
   while ((Get-Date) -lt $deadline) {

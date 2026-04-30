@@ -300,7 +300,161 @@ mod platform {
 
 // ─────────────────────────── non-macOS implementation ───────────────────────────
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+mod platform {
+    use std::sync::atomic::Ordering;
+    use std::sync::mpsc::Sender;
+    use std::sync::{Arc, Mutex, OnceLock};
+
+    use super::{HotkeyEvent, Shared};
+    use crate::types::HotkeyTrigger;
+    use windows::Win32::Foundation::{HINSTANCE, LPARAM, LRESULT, WPARAM};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        VIRTUAL_KEY, VK_ESCAPE, VK_LCONTROL, VK_LMENU, VK_RCONTROL, VK_RMENU, VK_RWIN,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CallNextHookEx, GetMessageW, KBDLLHOOKSTRUCT, MSG, SetWindowsHookExW, HHOOK,
+        WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    };
+
+    const LLKHF_INJECTED: u32 = 0x0000_0010;
+    const ACCEPT_INJECTED_ENV: &str = "OPENLESS_ACCEPT_SYNTHETIC_HOTKEY_EVENTS";
+
+    struct HookContext {
+        shared: Arc<Shared>,
+        tx: Sender<HotkeyEvent>,
+    }
+
+    static HOOK_CONTEXT: OnceLock<Mutex<Option<HookContext>>> = OnceLock::new();
+
+    pub fn run_listen_loop(
+        shared: Arc<Shared>,
+        tx: Sender<HotkeyEvent>,
+        status_tx: std::sync::mpsc::Sender<bool>,
+    ) {
+        let context = HOOK_CONTEXT.get_or_init(|| Mutex::new(None));
+        *context.lock().expect("hotkey context poisoned") = Some(HookContext { shared, tx });
+
+        let hook = unsafe {
+            SetWindowsHookExW(
+                WH_KEYBOARD_LL,
+                Some(low_level_keyboard_proc),
+                HINSTANCE::default(),
+                0,
+            )
+        };
+
+        let hook = match hook {
+            Ok(hook) => hook,
+            Err(err) => {
+                let _ = status_tx.send(false);
+                log::error!("[hotkey] WH_KEYBOARD_LL install failed: {err}");
+                return;
+            }
+        };
+
+        log::info!("[hotkey] WH_KEYBOARD_LL installed");
+        let _ = status_tx.send(true);
+
+        let mut msg = MSG::default();
+        loop {
+            let result = unsafe { GetMessageW(&mut msg, None, 0, 0) };
+            if result.0 <= 0 {
+                log::warn!("[hotkey] Windows hook message loop ended: {}", result.0);
+                break;
+            }
+        }
+
+        unsafe {
+            let _ = windows::Win32::UI::WindowsAndMessaging::UnhookWindowsHookEx(hook);
+        }
+    }
+
+    unsafe extern "system" fn low_level_keyboard_proc(
+        code: i32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        if code < 0 {
+            return unsafe { CallNextHookEx(HHOOK::default(), code, wparam, lparam) };
+        }
+
+        let event = unsafe { *(lparam.0 as *const KBDLLHOOKSTRUCT) };
+        let msg = wparam.0 as u32;
+        let is_down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
+        let is_up = msg == WM_KEYUP || msg == WM_SYSKEYUP;
+
+        if is_down || is_up {
+            if std::env::var("OPENLESS_DEBUG_HOTKEY_EVENTS")
+                .ok()
+                .as_deref()
+                == Some("1")
+            {
+                log::info!(
+                    "[hotkey] Windows key event vk={} scan={} flags={} down={}",
+                    event.vkCode,
+                    event.scanCode,
+                    event.flags.0,
+                    is_down
+                );
+            }
+            if event.flags.0 & LLKHF_INJECTED == 0 || accept_injected_events() {
+                if let Some(context_lock) = HOOK_CONTEXT.get() {
+                    if let Some(context) =
+                        context_lock.lock().expect("hotkey context poisoned").as_ref()
+                    {
+                        dispatch_key_event(context, event.vkCode, is_down);
+                    }
+                }
+            }
+        }
+
+        unsafe { CallNextHookEx(HHOOK::default(), code, wparam, lparam) }
+    }
+
+    fn dispatch_key_event(context: &HookContext, vk_code: u32, is_down: bool) {
+        if vk_code == VK_ESCAPE.0 as u32 && is_down {
+            let _ = context.tx.send(HotkeyEvent::Cancelled);
+            return;
+        }
+
+        let trigger = context.shared.binding.read().trigger;
+        if vk_code != trigger_to_vk(trigger).0 as u32 {
+            return;
+        }
+
+        if is_down {
+            let was_held = context.shared.trigger_held.swap(true, Ordering::SeqCst);
+            if !was_held {
+                log::info!("[hotkey] Windows trigger pressed vk={vk_code}");
+                let _ = context.tx.send(HotkeyEvent::Pressed);
+            }
+        } else {
+            let was_held = context.shared.trigger_held.swap(false, Ordering::SeqCst);
+            if was_held {
+                log::info!("[hotkey] Windows trigger released vk={vk_code}");
+                let _ = context.tx.send(HotkeyEvent::Released);
+            }
+        }
+    }
+
+    fn trigger_to_vk(trigger: HotkeyTrigger) -> VIRTUAL_KEY {
+        match trigger {
+            HotkeyTrigger::RightOption | HotkeyTrigger::RightAlt => VK_RMENU,
+            HotkeyTrigger::LeftOption => VK_LMENU,
+            HotkeyTrigger::RightControl => VK_RCONTROL,
+            HotkeyTrigger::LeftControl => VK_LCONTROL,
+            HotkeyTrigger::RightCommand => VK_RWIN,
+            HotkeyTrigger::Fn => VIRTUAL_KEY(0xFF),
+        }
+    }
+
+    fn accept_injected_events() -> bool {
+        std::env::var(ACCEPT_INJECTED_ENV).ok().as_deref() == Some("1")
+    }
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
 mod platform {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc::Sender;

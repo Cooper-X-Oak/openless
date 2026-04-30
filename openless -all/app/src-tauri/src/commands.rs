@@ -38,8 +38,7 @@ pub fn get_credentials() -> CredentialsStatus {
     let snap = CredentialsVault::snapshot();
     CredentialsStatus {
         volcengine_configured: configured(&snap.volcengine_app_key)
-            && configured(&snap.volcengine_access_key)
-            && configured(&snap.volcengine_resource_id),
+            && configured(&snap.volcengine_access_key),
         ark_configured: configured(&snap.ark_api_key),
     }
 }

@@ -158,10 +158,10 @@ impl Default for HotkeyStatus {
 
 impl Default for HotkeyBinding {
     fn default() -> Self {
-        // Right Option (mac) / Right Alt (win) — toggle by default per design.
+        // Right Option (mac) / Right Ctrl (win) — Right Alt is often AltGr on Windows keyboards.
         Self {
             trigger: if cfg!(target_os = "windows") {
-                HotkeyTrigger::RightAlt
+                HotkeyTrigger::RightControl
             } else {
                 HotkeyTrigger::RightOption
             },

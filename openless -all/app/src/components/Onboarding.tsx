@@ -38,7 +38,8 @@ export function Onboarding({ onComplete }: OnboardingProps) {
 
   useEffect(() => {
     refresh();
-    const id = window.setInterval(refresh, 1000);
+    // 麦克风检查会短暂打开输入流；降低轮询频率，避免 Windows 隐私指示器频繁闪烁。
+    const id = window.setInterval(refresh, 10000);
     // 用户从系统设置切回来时立刻刷新
     const onFocus = () => refresh();
     window.addEventListener('focus', onFocus);

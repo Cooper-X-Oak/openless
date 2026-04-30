@@ -1,7 +1,11 @@
 param(
   [string]$ExePath = "",
   [int]$StartupTimeoutSeconds = 12,
-  [switch]$RequireCredentials
+  [int]$PhysicalHotkeyTimeoutSeconds = 45,
+  [switch]$RequireCredentials,
+  [switch]$PhysicalHotkey,
+  [switch]$InsertionFallback,
+  [switch]$MicrophonePrivacy
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,9 +31,9 @@ function Get-OpenLessCredentialStatus {
   if (-not (Test-Path $path)) {
     return [pscustomobject]@{
       Path = $path
+      Present = $false
       VolcengineConfigured = $false
       ArkConfigured = $false
-      Present = $false
     }
   }
 
@@ -55,27 +59,36 @@ function Wait-LogPattern($Path, $Pattern, $TimeoutSeconds) {
   return $false
 }
 
+function Wait-HistoryChange($Path, $BaselineWriteTime, $TimeoutSeconds) {
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  while ((Get-Date) -lt $deadline) {
+    if ((Test-Path $Path)) {
+      $current = (Get-Item $Path).LastWriteTimeUtc
+      if ($null -eq $BaselineWriteTime -or $current -gt $BaselineWriteTime) {
+        return $true
+      }
+    }
+    Start-Sleep -Milliseconds 500
+  }
+  return $false
+}
+
 if (-not (Test-Path $ExePath)) {
   throw "OpenLess executable not found: $ExePath"
 }
 
 $logPath = Join-Path $env:LOCALAPPDATA "OpenLess\Logs\openless.log"
+$historyPath = Join-Path $env:APPDATA "OpenLess\history.json"
 $credentialStatus = Get-OpenLessCredentialStatus
 
-Write-Host "== Credential status =="
+Write-Host "== Credential gate =="
 $credentialStatus | Format-List
-if (-not $credentialStatus.VolcengineConfigured) {
-  Write-Host "[warn] Volcengine ASR credentials are not configured; real transcription cannot be completed."
-}
-if (-not $credentialStatus.ArkConfigured) {
-  Write-Host "[warn] Ark LLM credentials are not configured; polishing will fall back or fail depending on mode."
-}
 if ($RequireCredentials -and (-not $credentialStatus.VolcengineConfigured -or -not $credentialStatus.ArkConfigured)) {
   throw "Real regression requires configured Volcengine ASR and Ark LLM credentials."
 }
 
 Write-Host ""
-Write-Host "== Launch smoke =="
+Write-Host "== Launch gate =="
 $process = Start-Process -FilePath $ExePath -PassThru
 try {
   Start-Sleep -Seconds 4
@@ -94,15 +107,41 @@ try {
     throw "Hotkey listener did not report installed within $StartupTimeoutSeconds seconds."
   }
 
-  Write-Host ""
-  Write-Host "Manual checks still required:"
-  Write-Host "- Press the configured physical global hotkey to start/stop recording."
-  Write-Host "- Speak a short phrase with valid ASR credentials configured."
-  Write-Host "- Focus Notepad or another text field and verify Windows insert status falls back to copied/Ctrl+V when insertion cannot be confirmed."
-  Write-Host "- Toggle Windows microphone privacy off/on and rerun Settings -> Permissions."
+  if ($PhysicalHotkey) {
+    Write-Host ""
+    Write-Host "== Physical hotkey gate =="
+    Write-Host "Press the configured physical OpenLess hotkey now. Synthetic SendInput is not accepted for this gate."
+    if (-not (Wait-LogPattern $logPath "\[coord\] hotkey pressed" $PhysicalHotkeyTimeoutSeconds)) {
+      throw "No physical hotkey press was observed in the log within $PhysicalHotkeyTimeoutSeconds seconds."
+    }
+    Write-Host "[ok] Physical hotkey press observed."
+  }
+
+  if ($InsertionFallback) {
+    Write-Host ""
+    Write-Host "== Insertion fallback gate =="
+    $baseline = $null
+    if (Test-Path $historyPath) {
+      $baseline = (Get-Item $historyPath).LastWriteTimeUtc
+    }
+    $notepad = Start-Process notepad.exe -PassThru
+    Write-Host "Notepad launched. Focus the edit area, use the physical hotkey, speak a short phrase, then finish recording."
+    if (-not (Wait-HistoryChange $historyPath $baseline 120)) {
+      throw "History did not change within 120 seconds after manual recording."
+    }
+    Write-Host "[ok] History changed after manual recording. Inspect the capsule/history insert status for inserted vs copiedFallback."
+    Stop-Process -Id $notepad.Id -Force -ErrorAction SilentlyContinue
+  }
+
+  if ($MicrophonePrivacy) {
+    Write-Host ""
+    Write-Host "== Microphone privacy gate =="
+    Start-Process "ms-settings:privacy-microphone"
+    Write-Host "Toggle microphone privacy off, return to OpenLess Settings -> Permissions, confirm it no longer reports granted, then toggle it back on and rerun this script."
+  }
 } finally {
   Get-Process openless -ErrorAction SilentlyContinue | Stop-Process -Force
 }
 
 Write-Host ""
-Write-Host "Runtime smoke passed."
+Write-Host "Windows real regression script completed."

@@ -15,6 +15,7 @@ use tauri::{async_runtime, AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
 use crate::asr::{DictionaryHotword, RawTranscript, VolcengineCredentials, VolcengineStreamingASR};
+use crate::buffering_audio_consumer::BufferingAudioConsumer;
 use crate::hotkey::{HotkeyEvent, HotkeyMonitor};
 use crate::insertion::TextInserter;
 use crate::persistence::{
@@ -65,6 +66,7 @@ struct Inner {
     inserter: TextInserter,
     state: Mutex<SessionState>,
     asr: Mutex<Option<Arc<VolcengineStreamingASR>>>,
+    audio_consumer: Mutex<Option<Arc<BufferingAudioConsumer>>>,
     recorder: Mutex<Option<Recorder>>,
     hotkey: Mutex<Option<HotkeyMonitor>>,
     hotkey_status: Mutex<HotkeyStatus>,
@@ -88,6 +90,7 @@ impl Coordinator {
                 inserter: TextInserter::new(),
                 state: Mutex::new(SessionState::default()),
                 asr: Mutex::new(None),
+                audio_consumer: Mutex::new(None),
                 recorder: Mutex::new(None),
                 hotkey: Mutex::new(None),
                 hotkey_status: Mutex::new(HotkeyStatus::default()),
@@ -258,6 +261,8 @@ async fn handle_released(inner: &Arc<Inner>) {
     if mode == HotkeyMode::Hold {
         if phase == SessionPhase::Listening {
             let _ = end_session(inner).await;
+        } else if phase == SessionPhase::Starting {
+            cancel_session(inner);
         }
     }
 }
@@ -275,6 +280,18 @@ fn reset_session_state(inner: &Arc<Inner>) {
     let mut state = inner.state.lock();
     state.phase = SessionPhase::Idle;
     state.listening_started_at = None;
+}
+
+fn clear_audio_consumer(inner: &Arc<Inner>) {
+    if let Some(consumer) = inner.audio_consumer.lock().take() {
+        consumer.clear();
+    }
+}
+
+fn stop_recorder(inner: &Arc<Inner>) {
+    if let Some(rec) = inner.recorder.lock().take() {
+        rec.stop();
+    }
 }
 
 async fn begin_session(inner: &Arc<Inner>) -> Result<(), String> {
@@ -318,28 +335,10 @@ async fn begin_session(inner: &Arc<Inner>) -> Result<(), String> {
 
     emit_capsule(inner, CapsuleState::Recording, 0.0, 0, None, None);
 
-    let creds = read_volc_credentials();
-    let hotwords = enabled_hotwords(inner);
+    let audio_consumer = Arc::new(BufferingAudioConsumer::new(320_000));
+    *inner.audio_consumer.lock() = Some(Arc::clone(&audio_consumer));
 
-    let asr = Arc::new(VolcengineStreamingASR::new(creds, hotwords));
-    if let Err(e) = asr.open_session().await {
-        log::error!("[coord] open ASR session failed: {e}");
-        emit_capsule(
-            inner,
-            CapsuleState::Error,
-            0.0,
-            0,
-            Some(format!("ASR 连接失败: {e}")),
-            None,
-        );
-        reset_session_state(inner);
-        return Err(e.to_string());
-    }
-    *inner.asr.lock() = Some(Arc::clone(&asr));
-
-    let consumer: Arc<dyn crate::recorder::AudioConsumer> = Arc::new(AsrBridge {
-        asr: Arc::clone(&asr),
-    });
+    let recorder_consumer: Arc<dyn crate::recorder::AudioConsumer> = audio_consumer.clone();
     let inner_for_level = Arc::clone(inner);
     let level_handler: Arc<dyn Fn(f32) + Send + Sync> = Arc::new(move |level| {
         let phase = inner_for_level.state.lock().phase;
@@ -361,18 +360,14 @@ async fn begin_session(inner: &Arc<Inner>) -> Result<(), String> {
         }
     });
 
-    match Recorder::start(consumer, level_handler) {
+    match Recorder::start(recorder_consumer, level_handler) {
         Ok(rec) => {
             *inner.recorder.lock() = Some(rec);
-            let mut state = inner.state.lock();
-            state.phase = SessionPhase::Listening;
-            state.listening_started_at = Some(Instant::now());
             log::info!("[coord] session started");
         }
         Err(e) => {
             log::error!("[coord] recorder start failed: {e}");
-            asr.cancel();
-            *inner.asr.lock() = None;
+            clear_audio_consumer(inner);
             emit_capsule(
                 inner,
                 CapsuleState::Error,
@@ -385,6 +380,40 @@ async fn begin_session(inner: &Arc<Inner>) -> Result<(), String> {
             return Err(e.to_string());
         }
     }
+
+    let creds = read_volc_credentials();
+    let hotwords = enabled_hotwords(inner);
+
+    let asr = Arc::new(VolcengineStreamingASR::new(creds, hotwords));
+    if let Err(e) = asr.open_session().await {
+        log::error!("[coord] open ASR session failed: {e}");
+        emit_capsule(
+            inner,
+            CapsuleState::Error,
+            0.0,
+            0,
+            Some(format!("ASR 连接失败: {e}")),
+            None,
+        );
+        stop_recorder(inner);
+        clear_audio_consumer(inner);
+        reset_session_state(inner);
+        return Err(e.to_string());
+    }
+
+    if inner.state.lock().phase != SessionPhase::Starting {
+        asr.cancel();
+        return Ok(());
+    }
+
+    *inner.asr.lock() = Some(Arc::clone(&asr));
+    let asr_consumer: Arc<dyn crate::asr::AudioConsumer> = asr.clone();
+    audio_consumer.attach(asr_consumer);
+
+    let mut state = inner.state.lock();
+    state.phase = SessionPhase::Listening;
+    state.listening_started_at = Some(Instant::now());
+    log::info!("[coord] ASR attached to recorder buffer");
 
     Ok(())
 }
@@ -401,9 +430,8 @@ async fn end_session(inner: &Arc<Inner>) -> Result<(), String> {
     let elapsed = inner.state.lock().started_at.elapsed().as_millis() as u64;
     emit_capsule(inner, CapsuleState::Transcribing, 0.0, elapsed, None, None);
 
-    if let Some(rec) = inner.recorder.lock().take() {
-        rec.stop();
-    }
+    stop_recorder(inner);
+    clear_audio_consumer(inner);
 
     let asr_opt = inner.asr.lock().clone();
     let asr = match asr_opt {
@@ -528,9 +556,8 @@ fn cancel_session(inner: &Arc<Inner>) {
     if phase == SessionPhase::Idle {
         return;
     }
-    if let Some(rec) = inner.recorder.lock().take() {
-        rec.stop();
-    }
+    stop_recorder(inner);
+    clear_audio_consumer(inner);
     if let Some(asr) = inner.asr.lock().take() {
         asr.cancel();
     }
@@ -542,28 +569,41 @@ fn cancel_session(inner: &Arc<Inner>) {
 // ─────────────────────────── helpers ───────────────────────────
 
 fn ensure_microphone_permission(inner: &Arc<Inner>) -> Result<(), String> {
-    use crate::permissions::{self, PermissionStatus};
-
-    let status = permissions::check_microphone();
-    if matches!(
-        status,
-        PermissionStatus::Granted | PermissionStatus::NotApplicable
-    ) {
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = inner;
+        let status = crate::permissions::preflight_microphone();
+        if matches!(status, crate::permissions::PermissionStatus::Denied) {
+            return Err(format!("需要麦克风权限，当前状态: {status:?}"));
+        }
         return Ok(());
     }
 
-    let requested = if let Some(app) = inner.app.lock().clone() {
-        crate::request_microphone_from_foreground(&app)
-    } else {
-        permissions::request_microphone()
-    };
-    if matches!(
-        requested,
-        PermissionStatus::Granted | PermissionStatus::NotApplicable
-    ) {
-        Ok(())
-    } else {
-        Err(format!("需要麦克风权限，当前状态: {requested:?}"))
+    #[cfg(target_os = "macos")]
+    {
+    use crate::permissions::{self, PermissionStatus};
+
+        let status = permissions::check_microphone();
+        if matches!(
+            status,
+            PermissionStatus::Granted | PermissionStatus::NotApplicable
+        ) {
+            return Ok(());
+        }
+
+        let requested = if let Some(app) = inner.app.lock().clone() {
+            crate::request_microphone_from_foreground(&app)
+        } else {
+            permissions::request_microphone()
+        };
+        if matches!(
+            requested,
+            PermissionStatus::Granted | PermissionStatus::NotApplicable
+        ) {
+            Ok(())
+        } else {
+            Err(format!("需要麦克风权限，当前状态: {requested:?}"))
+        }
     }
 }
 
@@ -688,18 +728,6 @@ fn emit_capsule(
     }
 
     let _ = app.emit_to("capsule", "capsule:state", payload);
-}
-
-// ─────────────────────────── audio bridge ───────────────────────────
-
-struct AsrBridge {
-    asr: Arc<VolcengineStreamingASR>,
-}
-
-impl crate::recorder::AudioConsumer for AsrBridge {
-    fn consume_pcm_chunk(&self, pcm: &[u8]) {
-        crate::asr::AudioConsumer::consume_pcm_chunk(&*self.asr, pcm);
-    }
 }
 
 #[cfg(test)]

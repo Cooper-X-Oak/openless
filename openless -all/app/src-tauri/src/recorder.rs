@@ -20,7 +20,8 @@ use cpal::{SampleFormat, StreamConfig};
 use parking_lot::Mutex;
 use thiserror::Error;
 
-use crate::permissions::{self, PermissionStatus};
+#[cfg(target_os = "macos")]
+use crate::permissions;
 
 /// 目标采样率（与 Swift 端常量一致；不要改）。
 const TARGET_SAMPLE_RATE: u32 = 16_000;
@@ -60,21 +61,26 @@ impl Recorder {
         consumer: Arc<dyn AudioConsumer>,
         level_handler: Arc<dyn Fn(f32) + Send + Sync>,
     ) -> Result<Self, RecorderError> {
-        let status = permissions::check_microphone();
-        if !matches!(
-            status,
-            PermissionStatus::Granted | PermissionStatus::NotApplicable
-        ) {
-            let requested = permissions::request_microphone();
+        #[cfg(target_os = "macos")]
+        {
+            let status = permissions::check_microphone();
             if !matches!(
-                requested,
-                PermissionStatus::Granted | PermissionStatus::NotApplicable
+                status,
+                permissions::PermissionStatus::Granted
+                    | permissions::PermissionStatus::NotApplicable
             ) {
-                log::warn!(
-                    "[recorder] microphone permission not granted: {:?}",
-                    requested
-                );
-                return Err(RecorderError::PermissionDenied);
+                let requested = permissions::request_microphone();
+                if !matches!(
+                    requested,
+                    permissions::PermissionStatus::Granted
+                        | permissions::PermissionStatus::NotApplicable
+                ) {
+                    log::warn!(
+                        "[recorder] microphone permission not granted: {:?}",
+                        requested
+                    );
+                    return Err(RecorderError::PermissionDenied);
+                }
             }
         }
 

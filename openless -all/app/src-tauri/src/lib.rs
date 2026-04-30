@@ -11,6 +11,7 @@
 //! - commands: Tauri IPC surface
 
 mod asr;
+mod buffering_audio_consumer;
 mod commands;
 mod coordinator;
 mod hotkey;

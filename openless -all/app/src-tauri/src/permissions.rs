@@ -107,6 +107,10 @@ mod platform {
         check_microphone_via_avcapture_device()
     }
 
+    pub fn preflight_microphone() -> PermissionStatus {
+        check_microphone()
+    }
+
     pub fn request_microphone() -> PermissionStatus {
         // 与 Swift `MicrophonePermission.request()` 保持同源，8 秒兜底。
         if let Some(status) = request_microphone_via_avaudio_application() {
@@ -290,6 +294,21 @@ mod platform {
         check_microphone()
     }
 
+    #[cfg(target_os = "windows")]
+    pub fn preflight_microphone() -> PermissionStatus {
+        if windows_microphone_registry_denied() {
+            log::warn!("[mic] Windows microphone privacy registry is denied");
+            PermissionStatus::Denied
+        } else {
+            PermissionStatus::NotDetermined
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    pub fn preflight_microphone() -> PermissionStatus {
+        PermissionStatus::NotApplicable
+    }
+
     fn classify_audio_probe_error(message: String) -> PermissionStatus {
         let lower = message.to_lowercase();
         log::warn!("[mic] input probe failed: {message}");
@@ -340,23 +359,48 @@ mod platform {
         Ok(())
     }
 
+    #[cfg(target_os = "windows")]
     fn windows_microphone_registry_denied() -> bool {
         candidate_microphone_registry_paths()
             .into_iter()
-            .any(|path| registry_value_is_deny(&path))
+            .any(|(root, subkey)| registry_value_is_deny(root, &subkey))
     }
 
-    fn candidate_microphone_registry_paths() -> Vec<String> {
+    #[cfg(not(target_os = "windows"))]
+    fn windows_microphone_registry_denied() -> bool {
+        false
+    }
+
+    #[cfg(target_os = "windows")]
+    fn candidate_microphone_registry_paths(
+    ) -> Vec<(windows::Win32::System::Registry::HKEY, String)> {
+        use windows::Win32::System::Registry::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+
         let mut paths = vec![
-            r"HKCU\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone".to_string(),
-            r"HKCU\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone\NonPackaged".to_string(),
-            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone".to_string(),
+            (
+                HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone"
+                    .to_string(),
+            ),
+            (
+                HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone\NonPackaged"
+                    .to_string(),
+            ),
+            (
+                HKEY_LOCAL_MACHINE,
+                r"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone"
+                    .to_string(),
+            ),
         ];
 
         if let Ok(exe) = std::env::current_exe() {
             if let Some(encoded) = exe.to_str().map(|path| path.replace('\\', "#")) {
-                paths.push(format!(
-                    r"HKCU\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone\NonPackaged\{encoded}"
+                paths.push((
+                    HKEY_CURRENT_USER,
+                    format!(
+                        r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone\NonPackaged\{encoded}"
+                    ),
                 ));
             }
         }
@@ -364,30 +408,71 @@ mod platform {
         paths
     }
 
-    fn registry_value_is_deny(path: &str) -> bool {
-        let output = match std::process::Command::new("reg")
-            .args(["query", path, "/v", "Value"])
-            .output()
-        {
-            Ok(output) => output,
-            Err(err) => {
-                log::warn!("[mic] reg query failed for {path}: {err}");
-                return false;
-            }
+    #[cfg(target_os = "windows")]
+    fn registry_value_is_deny(root: windows::Win32::System::Registry::HKEY, subkey: &str) -> bool {
+        use windows::core::PCWSTR;
+        use windows::Win32::System::Registry::{
+            RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, KEY_READ, REG_SZ,
+            REG_VALUE_TYPE,
         };
 
-        if !output.status.success() {
+        let subkey_w = wide_null(subkey);
+        let value_w = wide_null("Value");
+        let mut key = HKEY::default();
+        let open = unsafe { RegOpenKeyExW(root, PCWSTR(subkey_w.as_ptr()), 0, KEY_READ, &mut key) };
+        if open.is_err() {
             return false;
         }
 
-        String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .any(|line| line.contains("REG_SZ") && line.split_whitespace().any(|part| part == "Deny"))
+        let mut ty = REG_VALUE_TYPE(0);
+        let mut len = 0u32;
+        let size_result = unsafe {
+            RegQueryValueExW(
+                key,
+                PCWSTR(value_w.as_ptr()),
+                None,
+                Some(&mut ty),
+                None,
+                Some(&mut len),
+            )
+        };
+        if size_result.is_err() || ty != REG_SZ || len < 2 {
+            unsafe { let _ = RegCloseKey(key); };
+            return false;
+        }
+
+        let mut buf = vec![0u8; len as usize];
+        let read_result = unsafe {
+            RegQueryValueExW(
+                key,
+                PCWSTR(value_w.as_ptr()),
+                None,
+                Some(&mut ty),
+                Some(buf.as_mut_ptr()),
+                Some(&mut len),
+            )
+        };
+        unsafe { let _ = RegCloseKey(key); };
+        if read_result.is_err() || ty != REG_SZ {
+            return false;
+        }
+
+        let utf16_len = (len as usize / 2).saturating_sub(1);
+        let utf16 = unsafe { std::slice::from_raw_parts(buf.as_ptr() as *const u16, utf16_len) };
+        String::from_utf16_lossy(utf16)
+            .trim_end_matches('\0')
+            .eq_ignore_ascii_case("Deny")
+    }
+
+    #[cfg(target_os = "windows")]
+    fn wide_null(value: &str) -> Vec<u16> {
+        value.encode_utf16().chain(std::iter::once(0)).collect()
     }
 }
 
 pub use platform::{
-    check_accessibility, check_microphone, request_accessibility, request_microphone,
+    check_accessibility, check_microphone, preflight_microphone, request_accessibility,
+    request_microphone,
 };
 
 /// 兼容老调用：startup 时主动弹 Accessibility 框。

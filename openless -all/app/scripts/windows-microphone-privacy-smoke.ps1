@@ -262,7 +262,7 @@ try {
   Set-ConsentValue $globalMicPath "Deny"
   Set-ConsentValue $desktopMicPath "Deny"
   Set-ConsentValue $appMicPath "Deny"
-  Invoke-HotkeyAttempt "microphone permission gate failed|input probe failed" "\[coord\] session started" "privacy denied"
+  Invoke-HotkeyAttempt "microphone permission gate failed|input probe failed|recorder start failed" "\[coord\] session started" "privacy denied"
   Write-Host "[ok] Denied state blocks recording before session start."
 
   Set-ConsentValue $globalMicPath "Allow"

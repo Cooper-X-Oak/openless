@@ -1,5 +1,7 @@
 param(
   [string]$ExePath = "",
+  [ValidateSet("notepad", "browser")]
+  [string]$Target = "notepad",
   [string]$Phrase = "OpenLess Windows real regression",
   [int]$TimeoutSeconds = 120,
   [int]$VirtualKey = 0xA3,
@@ -205,6 +207,94 @@ function Wait-ProcessWindow($ProcessName, $After, $TimeoutSeconds) {
   return $null
 }
 
+function Resolve-BrowserPath {
+  $programFiles = if ($env:ProgramFiles) { $env:ProgramFiles } else { Join-Path $env:SystemDrive "Program Files" }
+  $programFilesX86 = if (${env:ProgramFiles(x86)}) { ${env:ProgramFiles(x86)} } else { Join-Path $env:SystemDrive "Program Files (x86)" }
+  $roots = @(
+    $programFilesX86,
+    $programFiles,
+    (Join-Path $env:LOCALAPPDATA "Microsoft\Edge\Application"),
+    (Join-Path $env:LOCALAPPDATA "Google\Chrome\Application"),
+    (Join-Path $env:LOCALAPPDATA "BraveSoftware\Brave-Browser\Application")
+  ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+  $candidates = @()
+  foreach ($root in $roots) {
+    $candidates += Join-Path $root "Microsoft\Edge\Application\msedge.exe"
+    $candidates += Join-Path $root "Google\Chrome\Application\chrome.exe"
+    $candidates += Join-Path $root "BraveSoftware\Brave-Browser\Application\brave.exe"
+    $candidates += Join-Path $root "msedge.exe"
+    $candidates += Join-Path $root "chrome.exe"
+    $candidates += Join-Path $root "brave.exe"
+  }
+  foreach ($candidate in $candidates) {
+    if ($candidate -and (Test-Path $candidate)) {
+      return $candidate
+    }
+  }
+  throw "Neither Microsoft Edge nor Google Chrome was found."
+}
+
+function New-BrowserInputFixture {
+  $path = Join-Path $env:TEMP "openless-browser-input-fixture.html"
+  $html = @"
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>OpenLess Browser Input Fixture</title>
+  <style>
+    body { font: 16px system-ui, sans-serif; margin: 32px; }
+    textarea { width: 720px; height: 220px; font: 18px Consolas, monospace; }
+  </style>
+</head>
+<body>
+  <textarea id="target" autofocus></textarea>
+  <script>
+    const target = document.getElementById('target');
+    target.focus();
+    target.select();
+    window.addEventListener('focus', () => target.focus());
+    document.body.addEventListener('click', () => target.focus());
+  </script>
+</body>
+</html>
+"@
+  Write-TextUtf8 $path $html
+  return $path
+}
+
+function Start-InputTarget($TargetName) {
+  $startedAt = Get-Date
+  if ($TargetName -eq "notepad") {
+    Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
+    Start-Process notepad.exe | Out-Null
+    $process = Wait-ProcessWindow "notepad" $startedAt 15
+    if (-not (Focus-Window $process)) {
+      throw "Notepad window could not be focused."
+    }
+    return [pscustomobject]@{ Process = $process; FixturePath = $null; ProcessName = "notepad" }
+  }
+
+  $browserPath = Resolve-BrowserPath
+  $fixture = New-BrowserInputFixture
+  $url = ([System.Uri]$fixture).AbsoluteUri
+  $processName = [System.IO.Path]::GetFileNameWithoutExtension($browserPath)
+  Get-Process $processName -ErrorAction SilentlyContinue | Stop-Process -Force
+  Start-Process -FilePath $browserPath -ArgumentList @(
+    "--new-window",
+    "--user-data-dir=$(Join-Path $env:TEMP 'openless-browser-smoke-profile')",
+    "--no-first-run",
+    "--disable-extensions",
+    $url
+  ) | Out-Null
+  $process = Wait-ProcessWindow $processName $startedAt 20
+  if (-not (Focus-Window $process)) {
+    throw "Browser window could not be focused."
+  }
+  Start-Sleep -Seconds 1
+  return [pscustomobject]@{ Process = $process; FixturePath = $fixture; ProcessName = $processName }
+}
+
 function Send-CtrlChord($Vk) {
   Send-KeyEdge 0xA2 $false $false
   Start-Sleep -Milliseconds 80
@@ -235,10 +325,9 @@ $baselineCount = Get-HistoryCount $historyPath
 $previousPreferences = Set-HoldHotkeyPreference $preferencesPath
 
 Get-Process openless -ErrorAction SilentlyContinue | Stop-Process -Force
-Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
 Remove-Item -LiteralPath $logPath -Force -ErrorAction SilentlyContinue
 
-Write-Host "== Real ASR + insertion fallback smoke =="
+Write-Host "== Real ASR + insertion fallback smoke ($Target) =="
 $env:OPENLESS_SHOW_MAIN_ON_START = "1"
 if ($DebugHotkeyEvents) {
   $env:OPENLESS_DEBUG_HOTKEY_EVENTS = "1"
@@ -250,18 +339,13 @@ try {
   Remove-Item Env:OPENLESS_DEBUG_HOTKEY_EVENTS -ErrorAction SilentlyContinue
 }
 
-$notepad = $null
+$inputTarget = $null
 try {
   if (-not (Wait-LogPattern $logPath "WH_KEYBOARD_LL installed" 20)) {
     throw "Windows low-level keyboard hook was not installed."
   }
 
-  $notepadStart = Get-Date
-  Start-Process notepad.exe | Out-Null
-  $notepad = Wait-ProcessWindow "notepad" $notepadStart 15
-  if (-not (Focus-Window $notepad)) {
-    throw "Notepad window could not be focused."
-  }
+  $inputTarget = Start-InputTarget $Target
 
   Press-Hotkey
   if (-not (Wait-LogPattern $logPath "\[hotkey\] Windows trigger pressed" 10)) {
@@ -293,25 +377,28 @@ try {
     throw "Expected Windows insertStatus copiedFallback, got '$($latest.insertStatus)'."
   }
 
-  Focus-Window $notepad | Out-Null
+  Focus-Window $inputTarget.Process | Out-Null
   Start-Sleep -Milliseconds 400
   Send-CtrlChord 0x41
   Start-Sleep -Milliseconds 200
   Send-CtrlChord 0x43
   Start-Sleep -Milliseconds 400
-  $notepadText = Get-Clipboard -Raw -ErrorAction SilentlyContinue
+  $targetText = Get-Clipboard -Raw -ErrorAction SilentlyContinue
 
-  if ([string]::IsNullOrWhiteSpace($notepadText)) {
-    throw "Notepad clipboard readback is empty after Ctrl+A/C."
+  if ([string]::IsNullOrWhiteSpace($targetText)) {
+    throw "$Target clipboard readback is empty after Ctrl+A/C."
   }
 
   Write-Host "[ok] History updated. raw='$($latest.rawTranscript)'"
   Write-Host "[ok] Final text length=$($latest.finalText.Length), insertStatus=$($latest.insertStatus)"
-  Write-Host "[ok] Notepad readback length=$($notepadText.Length)"
+  Write-Host "[ok] $Target readback length=$($targetText.Length)"
 } finally {
   Release-Hotkey
-  if ($null -ne $notepad) {
-    Stop-Process -Id $notepad.Id -Force -ErrorAction SilentlyContinue
+  if ($null -ne $inputTarget) {
+    Stop-Process -Name $inputTarget.ProcessName -Force -ErrorAction SilentlyContinue
+    if ($inputTarget.FixturePath) {
+      Remove-Item -LiteralPath $inputTarget.FixturePath -Force -ErrorAction SilentlyContinue
+    }
   }
   Get-Process openless -ErrorAction SilentlyContinue | Stop-Process -Force
   if ($null -eq $previousPreferences) {
@@ -321,4 +408,4 @@ try {
   }
 }
 
-Write-Host "Real ASR + insertion fallback smoke passed."
+Write-Host "Real ASR + insertion fallback smoke ($Target) passed."

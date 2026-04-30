@@ -27,6 +27,12 @@ using System;
 using System.Runtime.InteropServices;
 
 public static class OpenLessInput {
+  [DllImport("user32.dll")]
+  public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+  [DllImport("user32.dll")]
+  public static extern bool SetForegroundWindow(IntPtr hWnd);
+
   [StructLayout(LayoutKind.Sequential)]
   public struct INPUT {
     public int type;
@@ -95,28 +101,70 @@ function Send-KeyEdge($Vk, $KeyUp) {
   }
 }
 
+function Focus-Window($Process) {
+  if ($null -eq $Process -or $Process.MainWindowHandle -eq 0) {
+    return $false
+  }
+  [OpenLessInput]::ShowWindow($Process.MainWindowHandle, 9) | Out-Null
+  [OpenLessInput]::SetForegroundWindow($Process.MainWindowHandle) | Out-Null
+  Start-Sleep -Milliseconds 500
+  return $true
+}
+
+function Wait-ProcessWindow($ProcessName, $After, $TimeoutSeconds) {
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  while ((Get-Date) -lt $deadline) {
+    $candidates = Get-Process $ProcessName -ErrorAction SilentlyContinue |
+      Where-Object { $_.StartTime -ge $After -and $_.MainWindowHandle -ne 0 } |
+      Sort-Object StartTime -Descending
+    $windowProcess = @($candidates) | Select-Object -First 1
+    if ($null -ne $windowProcess) {
+      return $windowProcess
+    }
+    Start-Sleep -Milliseconds 300
+  }
+  return $null
+}
+
 $logPath = Join-Path $env:LOCALAPPDATA "OpenLess\Logs\openless.log"
 Remove-Item -LiteralPath $logPath -Force -ErrorAction SilentlyContinue
 Get-Process openless -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
 
 Write-Host "== Windows OS hotkey hook smoke =="
 $env:OPENLESS_SHOW_MAIN_ON_START = "1"
 try {
-  $process = Start-Process -FilePath $ExePath -WorkingDirectory (Split-Path $ExePath -Parent) -PassThru
+$process = Start-Process -FilePath $ExePath -WorkingDirectory (Split-Path $ExePath -Parent) -PassThru
 } finally {
   Remove-Item Env:OPENLESS_SHOW_MAIN_ON_START -ErrorAction SilentlyContinue
 }
 
+$notepad = $null
 try {
   if (-not (Wait-LogPattern $logPath "WH_KEYBOARD_LL installed" $TimeoutSeconds)) {
     throw "Windows low-level keyboard hook was not installed within $TimeoutSeconds seconds."
   }
 
-  Send-KeyEdge $VirtualKey $false
-  Start-Sleep -Milliseconds 400
-  Send-KeyEdge $VirtualKey $true
+  $notepadStart = Get-Date
+  Start-Process notepad.exe | Out-Null
+  $notepad = Wait-ProcessWindow "notepad" $notepadStart 15
+  if (-not (Focus-Window $notepad)) {
+    throw "Notepad window could not be focused."
+  }
 
-  if (-not (Wait-LogPattern $logPath "\[hotkey\] Windows trigger pressed" $TimeoutSeconds)) {
+  $observedPress = $false
+  for ($attempt = 1; $attempt -le 3 -and -not $observedPress; $attempt++) {
+    Send-KeyEdge $VirtualKey $false
+    $observedPress = Wait-LogPattern $logPath "\[hotkey\] Windows trigger pressed" 4
+    Start-Sleep -Milliseconds 400
+    Send-KeyEdge $VirtualKey $true
+    if (-not $observedPress) {
+      Start-Sleep -Milliseconds 500
+      Focus-Window $notepad | Out-Null
+    }
+  }
+
+  if (-not $observedPress) {
     throw "Windows hook did not observe synthetic vk=$VirtualKey press."
   }
   if (-not (Wait-LogPattern $logPath "\[coord\] hotkey pressed" $TimeoutSeconds)) {
@@ -124,7 +172,11 @@ try {
   }
   Write-Host "[ok] Windows low-level hook observed vk=$VirtualKey and reached Coordinator."
 } finally {
+  if ($null -ne $notepad) {
+    Stop-Process -Id $notepad.Id -Force -ErrorAction SilentlyContinue
+  }
   Get-Process openless -ErrorAction SilentlyContinue | Stop-Process -Force
+  Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
 }
 
 Write-Host "Windows OS hotkey hook smoke passed."

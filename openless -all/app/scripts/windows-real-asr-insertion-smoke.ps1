@@ -263,6 +263,18 @@ function New-BrowserInputFixture {
   return $path
 }
 
+function Stop-BrowserProfileProcesses($ProfilePath) {
+  if ([string]::IsNullOrWhiteSpace($ProfilePath)) {
+    return
+  }
+  $escaped = [Regex]::Escape($ProfilePath)
+  $processes = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -match "--user-data-dir=`"?$escaped`"?" }
+  foreach ($process in $processes) {
+    Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+  }
+}
+
 function Start-InputTarget($TargetName) {
   $startedAt = Get-Date
   if ($TargetName -eq "notepad") {
@@ -272,17 +284,19 @@ function Start-InputTarget($TargetName) {
     if (-not (Focus-Window $process)) {
       throw "Notepad window could not be focused."
     }
-    return [pscustomobject]@{ Process = $process; FixturePath = $null; ProcessName = "notepad" }
+    return [pscustomobject]@{ Process = $process; FixturePath = $null; ProfilePath = $null }
   }
 
   $browserPath = Resolve-BrowserPath
   $fixture = New-BrowserInputFixture
   $url = ([System.Uri]$fixture).AbsoluteUri
   $processName = [System.IO.Path]::GetFileNameWithoutExtension($browserPath)
-  Get-Process $processName -ErrorAction SilentlyContinue | Stop-Process -Force
+  $profilePath = Join-Path $env:TEMP "openless-browser-smoke-profile"
+  Stop-BrowserProfileProcesses $profilePath
+  Remove-Item -LiteralPath $profilePath -Recurse -Force -ErrorAction SilentlyContinue
   Start-Process -FilePath $browserPath -ArgumentList @(
     "--new-window",
-    "--user-data-dir=$(Join-Path $env:TEMP 'openless-browser-smoke-profile')",
+    "--user-data-dir=$profilePath",
     "--no-first-run",
     "--disable-extensions",
     $url
@@ -292,7 +306,7 @@ function Start-InputTarget($TargetName) {
     throw "Browser window could not be focused."
   }
   Start-Sleep -Seconds 1
-  return [pscustomobject]@{ Process = $process; FixturePath = $fixture; ProcessName = $processName }
+  return [pscustomobject]@{ Process = $process; FixturePath = $fixture; ProfilePath = $profilePath }
 }
 
 function Send-CtrlChord($Vk) {
@@ -395,9 +409,16 @@ try {
 } finally {
   Release-Hotkey
   if ($null -ne $inputTarget) {
-    Stop-Process -Name $inputTarget.ProcessName -Force -ErrorAction SilentlyContinue
+    if ($inputTarget.ProfilePath) {
+      Stop-BrowserProfileProcesses $inputTarget.ProfilePath
+    } else {
+      Stop-Process -Id $inputTarget.Process.Id -Force -ErrorAction SilentlyContinue
+    }
     if ($inputTarget.FixturePath) {
       Remove-Item -LiteralPath $inputTarget.FixturePath -Force -ErrorAction SilentlyContinue
+    }
+    if ($inputTarget.ProfilePath) {
+      Remove-Item -LiteralPath $inputTarget.ProfilePath -Recurse -Force -ErrorAction SilentlyContinue
     }
   }
   Get-Process openless -ErrorAction SilentlyContinue | Stop-Process -Force

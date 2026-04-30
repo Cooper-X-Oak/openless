@@ -412,6 +412,35 @@ async fn end_session(inner: &Arc<Inner>) -> Result<(), String> {
     };
     *inner.asr.lock() = None;
 
+    if raw.text.trim().is_empty() {
+        let session = DictationSession {
+            id: Uuid::new_v4().to_string(),
+            created_at: Utc::now().to_rfc3339(),
+            raw_transcript: raw.text.clone(),
+            final_text: String::new(),
+            mode: inner.prefs.get().default_mode,
+            app_bundle_id: None,
+            app_name: None,
+            insert_status: InsertStatus::Failed,
+            error_code: Some("emptyTranscript".to_string()),
+            duration_ms: Some(raw.duration_ms),
+            dictionary_entry_count: Some(enabled_phrases(inner).len() as u32),
+        };
+        if let Err(e) = inner.history.append(session) {
+            log::error!("[coord] history append failed: {e}");
+        }
+        emit_capsule(
+            inner,
+            CapsuleState::Error,
+            0.0,
+            elapsed,
+            Some("ASR returned empty transcript".to_string()),
+            None,
+        );
+        inner.state.lock().phase = SessionPhase::Idle;
+        return Err("ASR returned empty transcript".to_string());
+    }
+
     emit_capsule(inner, CapsuleState::Polishing, 0.0, elapsed, None, None);
 
     let prefs = inner.prefs.get();

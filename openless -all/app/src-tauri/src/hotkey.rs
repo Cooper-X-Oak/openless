@@ -382,6 +382,19 @@ mod platform {
         let is_up = msg == WM_KEYUP || msg == WM_SYSKEYUP;
 
         if is_down || is_up {
+            if std::env::var("OPENLESS_DEBUG_HOTKEY_EVENTS")
+                .ok()
+                .as_deref()
+                == Some("1")
+            {
+                log::info!(
+                    "[hotkey] Windows key event vk={} scan={} flags={} down={}",
+                    event.vkCode,
+                    event.scanCode,
+                    event.flags.0,
+                    is_down
+                );
+            }
             if let Some(context_lock) = HOOK_CONTEXT.get() {
                 if let Some(context) = context_lock.lock().expect("hotkey context poisoned").as_ref()
                 {

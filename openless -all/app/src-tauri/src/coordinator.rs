@@ -7,7 +7,7 @@
 
 use std::sync::mpsc;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use parking_lot::Mutex;
@@ -27,6 +27,8 @@ use crate::types::{
     HotkeyStatusState, InsertStatus, PolishMode,
 };
 
+const TOGGLE_STOP_GRACE: Duration = Duration::from_millis(700);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SessionPhase {
     Idle,
@@ -38,6 +40,7 @@ enum SessionPhase {
 struct SessionState {
     phase: SessionPhase,
     started_at: Instant,
+    listening_started_at: Option<Instant>,
 }
 
 impl Default for SessionState {
@@ -45,6 +48,7 @@ impl Default for SessionState {
         Self {
             phase: SessionPhase::Idle,
             started_at: Instant::now(),
+            listening_started_at: None,
         }
     }
 }
@@ -233,6 +237,11 @@ async fn handle_pressed(inner: &Arc<Inner>) {
             let _ = begin_session(inner).await;
         }
         (HotkeyMode::Toggle, SessionPhase::Listening) => {
+            let listening_started_at = inner.state.lock().listening_started_at;
+            if !should_accept_toggle_stop(listening_started_at, Instant::now()) {
+                log::info!("[coord] toggle stop ignored during recording startup grace");
+                return;
+            }
             let _ = end_session(inner).await;
         }
         (HotkeyMode::Hold, SessionPhase::Idle) => {
@@ -255,6 +264,19 @@ async fn handle_released(inner: &Arc<Inner>) {
 
 // ─────────────────────────── session lifecycle ───────────────────────────
 
+fn should_accept_toggle_stop(listening_started_at: Option<Instant>, now: Instant) -> bool {
+    listening_started_at
+        .and_then(|started_at| now.checked_duration_since(started_at))
+        .map(|elapsed| elapsed >= TOGGLE_STOP_GRACE)
+        .unwrap_or(true)
+}
+
+fn reset_session_state(inner: &Arc<Inner>) {
+    let mut state = inner.state.lock();
+    state.phase = SessionPhase::Idle;
+    state.listening_started_at = None;
+}
+
 async fn begin_session(inner: &Arc<Inner>) -> Result<(), String> {
     {
         let mut state = inner.state.lock();
@@ -263,6 +285,7 @@ async fn begin_session(inner: &Arc<Inner>) -> Result<(), String> {
         }
         state.phase = SessionPhase::Starting;
         state.started_at = Instant::now();
+        state.listening_started_at = None;
     }
 
     if let Err(message) = ensure_asr_credentials() {
@@ -275,7 +298,7 @@ async fn begin_session(inner: &Arc<Inner>) -> Result<(), String> {
             Some(message.clone()),
             None,
         );
-        inner.state.lock().phase = SessionPhase::Idle;
+        reset_session_state(inner);
         return Err(message);
     }
 
@@ -289,7 +312,7 @@ async fn begin_session(inner: &Arc<Inner>) -> Result<(), String> {
             Some(message.clone()),
             None,
         );
-        inner.state.lock().phase = SessionPhase::Idle;
+        reset_session_state(inner);
         return Err(message);
     }
 
@@ -309,7 +332,7 @@ async fn begin_session(inner: &Arc<Inner>) -> Result<(), String> {
             Some(format!("ASR 连接失败: {e}")),
             None,
         );
-        inner.state.lock().phase = SessionPhase::Idle;
+        reset_session_state(inner);
         return Err(e.to_string());
     }
     *inner.asr.lock() = Some(Arc::clone(&asr));
@@ -341,7 +364,9 @@ async fn begin_session(inner: &Arc<Inner>) -> Result<(), String> {
     match Recorder::start(consumer, level_handler) {
         Ok(rec) => {
             *inner.recorder.lock() = Some(rec);
-            inner.state.lock().phase = SessionPhase::Listening;
+            let mut state = inner.state.lock();
+            state.phase = SessionPhase::Listening;
+            state.listening_started_at = Some(Instant::now());
             log::info!("[coord] session started");
         }
         Err(e) => {
@@ -356,7 +381,7 @@ async fn begin_session(inner: &Arc<Inner>) -> Result<(), String> {
                 Some(format!("录音启动失败: {e}")),
                 None,
             );
-            inner.state.lock().phase = SessionPhase::Idle;
+            reset_session_state(inner);
             return Err(e.to_string());
         }
     }
@@ -384,7 +409,7 @@ async fn end_session(inner: &Arc<Inner>) -> Result<(), String> {
     let asr = match asr_opt {
         Some(a) => a,
         None => {
-            inner.state.lock().phase = SessionPhase::Idle;
+            reset_session_state(inner);
             return Ok(());
         }
     };
@@ -406,7 +431,7 @@ async fn end_session(inner: &Arc<Inner>) -> Result<(), String> {
                 Some(format!("识别失败: {e}")),
                 None,
             );
-            inner.state.lock().phase = SessionPhase::Idle;
+            reset_session_state(inner);
             return Err(e.to_string());
         }
     };
@@ -437,7 +462,7 @@ async fn end_session(inner: &Arc<Inner>) -> Result<(), String> {
             Some("ASR returned empty transcript".to_string()),
             None,
         );
-        inner.state.lock().phase = SessionPhase::Idle;
+        reset_session_state(inner);
         return Err("ASR returned empty transcript".to_string());
     }
 
@@ -487,7 +512,7 @@ async fn end_session(inner: &Arc<Inner>) -> Result<(), String> {
         Some(inserted_chars),
     );
 
-    inner.state.lock().phase = SessionPhase::Idle;
+    reset_session_state(inner);
 
     let inner_clone = Arc::clone(inner);
     async_runtime::spawn(async move {
@@ -509,7 +534,7 @@ fn cancel_session(inner: &Arc<Inner>) {
     if let Some(asr) = inner.asr.lock().take() {
         asr.cancel();
     }
-    inner.state.lock().phase = SessionPhase::Idle;
+    reset_session_state(inner);
     emit_capsule(inner, CapsuleState::Cancelled, 0.0, 0, None, None);
     log::info!("[coord] session cancelled");
 }
@@ -674,5 +699,28 @@ struct AsrBridge {
 impl crate::recorder::AudioConsumer for AsrBridge {
     fn consume_pcm_chunk(&self, pcm: &[u8]) {
         crate::asr::AudioConsumer::consume_pcm_chunk(&*self.asr, pcm);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use super::*;
+
+    #[test]
+    fn ignores_toggle_stop_inside_recording_start_grace() {
+        let now = Instant::now();
+        let started_at = now - (TOGGLE_STOP_GRACE - Duration::from_millis(1));
+
+        assert!(!should_accept_toggle_stop(Some(started_at), now));
+    }
+
+    #[test]
+    fn accepts_toggle_stop_after_recording_start_grace() {
+        let now = Instant::now();
+        let started_at = now - TOGGLE_STOP_GRACE;
+
+        assert!(should_accept_toggle_stop(Some(started_at), now));
     }
 }

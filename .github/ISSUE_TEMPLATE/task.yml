@@ -42,6 +42,21 @@ body:
     validations:
       required: true
   - type: textarea
+    id: cross_platform_impact
+    attributes:
+      label: 跨端影响评估
+      description: Windows 负责人必须说明该任务是否 Windows-only；若涉及共享状态机、IPC、UI、配置、构建或数据结构，必须写明对 macOS/Linux 的潜在影响和验证计划。
+      placeholder: |
+        ## 跨端影响评估
+
+        - 范围：Windows-only / 共享代码 / 不确定
+        - 影响端：Windows / macOS / Linux
+        - 共享文件或契约：
+        - 验证计划：
+        - 剩余风险：
+    validations:
+      required: true
+  - type: textarea
     id: acceptance
     attributes:
       label: 建议接受标准

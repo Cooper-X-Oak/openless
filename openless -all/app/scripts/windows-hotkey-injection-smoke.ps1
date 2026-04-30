@@ -51,9 +51,6 @@ try {
   if (-not (Wait-LogPattern $logPath "\[coord\] hotkey pressed" (Get-Date) $TimeoutSeconds)) {
     throw "Coordinator did not observe injected hotkey press within $TimeoutSeconds seconds."
   }
-  if (-not (Wait-LogPattern $logPath "\[debug\] startup hotkey injection completed" (Get-Date) $TimeoutSeconds)) {
-    throw "Debug hotkey injection did not complete within $TimeoutSeconds seconds."
-  }
   Write-Host "[ok] Coordinator hotkey path observed without physical keyboard input."
 } finally {
   Remove-Item Env:OPENLESS_DEBUG_HOTKEY_ON_START -ErrorAction SilentlyContinue

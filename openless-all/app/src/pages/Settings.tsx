@@ -21,6 +21,7 @@ import { createHotkeyRecorderState, orderHotkeyCodes, updateHotkeyRecorderState 
 import {
   checkAccessibilityPermission,
   checkMicrophonePermission,
+  getDefaultStyleSystemPrompts,
   getHotkeyStatus,
   getWindowsImeStatus,
   isTauri,
@@ -52,6 +53,8 @@ import type {
   MicrophoneDevice,
   PasteShortcut,
   PermissionStatus,
+  StyleSystemPrompts,
+  UserPreferences,
   WindowsImeStatus,
 } from '../lib/types';
 import { emitSaved } from '../lib/savedEvent';
@@ -226,6 +229,22 @@ function SettingRow({ label, desc, children, controlWidth }: SettingRowProps) {
       <div style={{ display: 'flex', alignItems: 'flex-start', minWidth: 0, width: controlWidth ?? 'auto' }}>{children}</div>
     </div>
   );
+}
+
+const STYLE_SYSTEM_PROMPT_MODES = ['raw', 'light', 'structured', 'formal'] as const;
+type StyleSystemPromptMode = typeof STYLE_SYSTEM_PROMPT_MODES[number];
+
+function cloneStyleSystemPrompts(source: StyleSystemPrompts | undefined): StyleSystemPrompts {
+  return {
+    raw: source?.raw ?? '',
+    light: source?.light ?? '',
+    structured: source?.structured ?? '',
+    formal: source?.formal ?? '',
+  };
+}
+
+function stylePromptModeName(t: ReturnType<typeof useTranslation>['t'], mode: StyleSystemPromptMode) {
+  return t(`style.modes.${mode}.name`);
 }
 
 function RecordingSection() {
@@ -1303,6 +1322,11 @@ function ProvidersSection() {
   const asrSwitchSeqRef = useRef(0);
   const [llmModelRevision, setLlmModelRevision] = useState(0);
   const [asrModelRevision, setAsrModelRevision] = useState(0);
+  const [promptDrafts, setPromptDrafts] = useState<StyleSystemPrompts | null>(null);
+  const [defaultPrompts, setDefaultPrompts] = useState<StyleSystemPrompts | null>(null);
+  const [savingPromptMode, setSavingPromptMode] = useState<StyleSystemPromptMode | null>(null);
+  const [savedPromptMode, setSavedPromptMode] = useState<StyleSystemPromptMode | null>(null);
+  const [promptError, setPromptError] = useState<string | null>(null);
   const os = detectOS();
   // 主 ASR 下拉只列云端选项；本地推理（local-qwen3 / foundry-local-whisper）
   // 移到「高级」标签页，防止新手误开 CPU 推理。详见 AdvancedSection。
@@ -1324,6 +1348,30 @@ function ProvidersSection() {
     setAsrProvider(asrId);
     setCommittedAsrProvider(asrId);
   }, [prefs, os]);
+
+  useEffect(() => {
+    if (!prefs) return;
+    setPromptDrafts(cloneStyleSystemPrompts(prefs.styleSystemPrompts));
+    setSavingPromptMode(null);
+    setSavedPromptMode(null);
+    setPromptError(null);
+  }, [prefs]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getDefaultStyleSystemPrompts()
+      .then(prompts => {
+        if (!cancelled) setDefaultPrompts(prompts);
+      })
+      .catch(error => {
+        if (!cancelled) {
+          console.warn('[settings] failed to load default style system prompts', error);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // issue #219 / #220 P2：
   //   1. 立刻 setLlmProvider —— 受控 <select> 必须反映用户最新选择。
@@ -1380,6 +1428,49 @@ function ProvidersSection() {
     });
   };
 
+  const onPromptDraftChange = (mode: StyleSystemPromptMode, value: string) => {
+    setPromptDrafts(current => (current ? { ...current, [mode]: value } : current));
+    if (savedPromptMode === mode) setSavedPromptMode(null);
+    if (promptError) setPromptError(null);
+  };
+
+  const onSaveSystemPrompt = async (mode: StyleSystemPromptMode) => {
+    if (!prefs || !promptDrafts) return;
+    const nextValue = promptDrafts[mode];
+    if (nextValue === prefs.styleSystemPrompts[mode]) {
+      setSavedPromptMode(mode);
+      return;
+    }
+    setSavingPromptMode(mode);
+    setSavedPromptMode(null);
+    setPromptError(null);
+    try {
+      const nextPrefs: UserPreferences = {
+        ...prefs,
+        styleSystemPrompts: {
+          ...prefs.styleSystemPrompts,
+          [mode]: nextValue,
+        },
+      };
+      await updatePrefs(nextPrefs);
+      setSavedPromptMode(mode);
+    } catch (error) {
+      console.error('[settings] failed to save style system prompt', error);
+      setPromptError(t('settings.providers.styleSystemPromptSaveFailed', {
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    } finally {
+      setSavingPromptMode(current => (current === mode ? null : current));
+    }
+  };
+
+  const onResetSystemPrompt = (mode: StyleSystemPromptMode) => {
+    if (!defaultPrompts) return;
+    setPromptDrafts(current => (current ? { ...current, [mode]: defaultPrompts[mode] } : current));
+    if (savedPromptMode === mode) setSavedPromptMode(null);
+    if (promptError) setPromptError(null);
+  };
+
   const onAsrProviderChange = async (id: AsrPresetId) => {
     setAsrProvider(id);
     const seq = ++asrSwitchSeqRef.current;
@@ -1430,6 +1521,7 @@ function ProvidersSection() {
   const preset = LLM_PRESETS.find(p => p.id === committedLlmProvider) ?? LLM_PRESETS[LLM_PRESETS.length - 1];
   const codexOAuthSelected = committedLlmProvider === 'codex_oauth';
   const asrPreset = visibleAsrPresets.find(p => p.id === committedAsrProvider);
+  const promptDraftValues = promptDrafts ?? cloneStyleSystemPrompts(prefs?.styleSystemPrompts);
 
   return (
     <>
@@ -1477,6 +1569,34 @@ function ProvidersSection() {
           )}
         />
         <ProviderTools key={committedLlmProvider} kind="llm" modelAccount="ark.model_id" onModelSelected={() => setLlmModelRevision(v => v + 1)} />
+      </Card>
+
+      <Card>
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{t('settings.providers.styleSystemPromptTitle')}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--ol-ink-4)', marginTop: 2 }}>
+            {t('settings.providers.styleSystemPromptDesc')}
+          </div>
+        </div>
+        <div
+          style={{
+            padding: 16,
+            borderRadius: 14,
+            border: '0.5px solid var(--ol-line)',
+            background: 'linear-gradient(180deg, rgba(248,250,252,0.95), rgba(255,255,255,0.98))',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+            <Pill tone="blue">已迁移</Pill>
+            <Pill tone="outline">{t('settings.providers.styleSystemPromptTitle')}</Pill>
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--ol-ink-2)', lineHeight: 1.7, marginBottom: 10 }}>
+            完整 system prompt 不再在设置页里按模式硬编码编辑，而是统一收敛到「风格」页的 Style Pack 详情面板。
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--ol-ink-4)', lineHeight: 1.6 }}>
+            如果你要改运行时 prompt、示例、标签或导入导出 ZIP，请去「风格」页操作。
+          </div>
+        </div>
       </Card>
 
       <Card>

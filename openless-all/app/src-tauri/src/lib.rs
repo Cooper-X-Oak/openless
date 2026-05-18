@@ -129,6 +129,9 @@ pub fn run() {
                 if let Err(e) = position_capsule_bottom_center(&capsule, false) {
                     log::warn!("[capsule] position failed: {e}");
                 }
+                // Keep the Windows capsule host fully transparent. The native host is larger
+                // than the visible pill to reserve shadow, badge, and animation room; applying
+                // Acrylic to the whole host paints those transparent margins gray.
                 let _ = capsule.hide();
             }
 
@@ -142,6 +145,15 @@ pub fn run() {
                 }
                 #[cfg(target_os = "macos")]
                 make_qa_window_draggable_macos(&qa);
+                // QA fills its native host, so Windows Acrylic remains a useful fallback here.
+                // Capsule is different: its host has transparent margins around a smaller pill.
+                #[cfg(target_os = "windows")]
+                {
+                    use window_vibrancy::apply_acrylic;
+                    if let Err(e) = apply_acrylic(&qa, Some((30, 32, 38, 140))) {
+                        log::warn!("[qa] acrylic failed: {e}");
+                    }
+                }
                 let _ = qa.hide();
             } else {
                 log::info!("[qa] qa 窗口未在 tauri.conf.json 中声明，前端 agent 会补上");

@@ -1,0 +1,257 @@
+﻿{
+    "timestamp":  "2026-05-19T12:36:43.1810171+08:00",
+    "repoRoot":  "D:\\Users\\cooper\\Practice-Project\\202604\\openless-windows-capsule-contract",
+    "exe":  "D:\\cargo-targets\\github.com_appergb_openless\\debug\\openless.exe",
+    "dryRun":  true,
+    "expected":  {
+                     "mode":  "recording-pill",
+                     "greenBackdrop":  "#25C851",
+                     "capsuleWidth":  220,
+                     "capsuleHeight":  84,
+                     "physicalCapsuleWidth":  275,
+                     "physicalCapsuleHeight":  105,
+                     "sizeTolerance":  2,
+                     "strictVisualPill":  false,
+                     "allowScreenCaptureMiss":  false,
+                     "translationActive":  false
+                 },
+    "triggerAttempts":  1,
+    "preExistingOpenLess":  {
+
+                            },
+    "runningAfterStart":  {
+                              "Id":  23632,
+                              "Path":  "D:\\cargo-targets\\github.com_appergb_openless\\debug\\openless.exe",
+                              "StartTime":  "\/Date(1779165397035)\/"
+                          },
+    "capsuleHwnd":  "0x1310B76",
+    "capsuleTitle":  "OpenLess Capsule",
+    "capsuleClassName":  "Tauri Window",
+    "dpi":  120,
+    "dpiScale":  1.25,
+    "rect":  {
+                 "left":  823,
+                 "top":  900,
+                 "right":  1098,
+                 "bottom":  1005,
+                 "width":  275,
+                 "height":  105
+             },
+    "expectedContract":  "transparent host margins pass through; visible pill center hits capsule; transparent pixels show green backdrop",
+    "hits":  {
+                 "transparentTopLeft":  {
+                                            "name":  "transparentTopLeft",
+                                            "point":  {
+                                                          "x":  828,
+                                                          "y":  905
+                                                      },
+                                            "hwnd":  "0x4A0EC0",
+                                            "title":  "OpenLess Hit Test Backdrop",
+                                            "className":  "WindowsForms10.Window.8.app.0.1bab83f_r8_ad1",
+                                            "rootHwnd":  "0x4A0EC0",
+                                            "rootTitle":  "OpenLess Hit Test Backdrop",
+                                            "rootClassName":  "WindowsForms10.Window.8.app.0.1bab83f_r8_ad1",
+                                            "isCapsuleRoot":  false
+                                        },
+                 "transparentLeftMiddle":  {
+                                               "name":  "transparentLeftMiddle",
+                                               "point":  {
+                                                             "x":  828,
+                                                             "y":  952
+                                                         },
+                                               "hwnd":  "0x4A0EC0",
+                                               "title":  "OpenLess Hit Test Backdrop",
+                                               "className":  "WindowsForms10.Window.8.app.0.1bab83f_r8_ad1",
+                                               "rootHwnd":  "0x4A0EC0",
+                                               "rootTitle":  "OpenLess Hit Test Backdrop",
+                                               "rootClassName":  "WindowsForms10.Window.8.app.0.1bab83f_r8_ad1",
+                                               "isCapsuleRoot":  false
+                                           },
+                 "transparentBottomRight":  {
+                                                "name":  "transparentBottomRight",
+                                                "point":  {
+                                                              "x":  1093,
+                                                              "y":  1000
+                                                          },
+                                                "hwnd":  "0x4A0EC0",
+                                                "title":  "OpenLess Hit Test Backdrop",
+                                                "className":  "WindowsForms10.Window.8.app.0.1bab83f_r8_ad1",
+                                                "rootHwnd":  "0x4A0EC0",
+                                                "rootTitle":  "OpenLess Hit Test Backdrop",
+                                                "rootClassName":  "WindowsForms10.Window.8.app.0.1bab83f_r8_ad1",
+                                                "isCapsuleRoot":  false
+                                            },
+                 "pillCenter":  {
+                                    "name":  "pillCenter",
+                                    "point":  {
+                                                  "x":  961,
+                                                  "y":  952
+                                              },
+                                    "hwnd":  "0xE0D5A",
+                                    "title":  "Chrome Legacy Window",
+                                    "className":  "Chrome_RenderWidgetHostHWND",
+                                    "rootHwnd":  "0x1310B76",
+                                    "rootTitle":  "OpenLess Capsule",
+                                    "rootClassName":  "Tauri Window",
+                                    "isCapsuleRoot":  true
+                                }
+             },
+    "pixelSamples":  {
+                         "topLeft":  {
+                                         "r":  37,
+                                         "g":  200,
+                                         "b":  81,
+                                         "a":  255
+                                     },
+                         "leftMiddle":  {
+                                            "r":  37,
+                                            "g":  200,
+                                            "b":  81,
+                                            "a":  255
+                                        },
+                         "bottomRight":  {
+                                             "r":  37,
+                                             "g":  200,
+                                             "b":  81,
+                                             "a":  255
+                                         },
+                         "pillCenter":  {
+                                            "r":  246,
+                                            "g":  253,
+                                            "b":  248,
+                                            "a":  255
+                                        },
+                         "badgeCenter":  null,
+                         "printWindowCenter":  {
+                                                   "r":  245,
+                                                   "g":  245,
+                                                   "b":  245,
+                                                   "a":  255
+                                               },
+                         "printWindowTopLeft":  {
+                                                    "r":  0,
+                                                    "g":  0,
+                                                    "b":  0,
+                                                    "a":  255
+                                                }
+                     },
+    "checks":  {
+                   "currentExeWasActive":  true,
+                   "transparentTopLeftPassesThrough":  true,
+                   "transparentLeftMiddlePassesThrough":  true,
+                   "transparentBottomRightPassesThrough":  true,
+                   "pillCenterHitsCapsule":  true,
+                   "badgeCenterHitsCapsule":  true,
+                   "transparentTopLeftPixelIsGreen":  true,
+                   "transparentLeftMiddlePixelIsGreen":  true,
+                   "transparentBottomRightPixelIsGreen":  true,
+                   "screenPillCaptured":  true,
+                   "screenBadgeCaptured":  true,
+                   "printWindowPillCaptured":  true,
+                   "visualPillCaptured":  true,
+                   "printWindowReturnedTrue":  true,
+                   "capsuleWidthMatchesExpected":  true,
+                   "capsuleHeightMatchesExpected":  true,
+                   "capsuleSizeMatchesExpected":  true,
+                   "inputPassed":  true,
+                   "transparentPixelsPassed":  true,
+                   "allPassed":  true
+               },
+    "contractGates":  [
+                          {
+                              "id":  "process.currentExe",
+                              "expected":  "openless.exe process path equals ExePath",
+                              "observed":  true,
+                              "pass":  true
+                          },
+                          {
+                              "id":  "input.transparentTopLeft",
+                              "expected":  "WindowFromPoint root is not capsule",
+                              "observed":  "OpenLess Hit Test Backdrop",
+                              "pass":  true
+                          },
+                          {
+                              "id":  "input.transparentLeftMiddle",
+                              "expected":  "WindowFromPoint root is not capsule",
+                              "observed":  "OpenLess Hit Test Backdrop",
+                              "pass":  true
+                          },
+                          {
+                              "id":  "input.transparentBottomRight",
+                              "expected":  "WindowFromPoint root is not capsule",
+                              "observed":  "OpenLess Hit Test Backdrop",
+                              "pass":  true
+                          },
+                          {
+                              "id":  "input.pillCenter",
+                              "expected":  "WindowFromPoint root is OpenLess Capsule",
+                              "observed":  "OpenLess Capsule",
+                              "pass":  true
+                          },
+                          {
+                              "id":  "pixels.transparentTopLeft",
+                              "expected":  "green backdrop #25C851",
+                              "observed":  {
+                                               "r":  37,
+                                               "g":  200,
+                                               "b":  81,
+                                               "a":  255
+                                           },
+                              "pass":  true
+                          },
+                          {
+                              "id":  "pixels.transparentLeftMiddle",
+                              "expected":  "green backdrop #25C851",
+                              "observed":  {
+                                               "r":  37,
+                                               "g":  200,
+                                               "b":  81,
+                                               "a":  255
+                                           },
+                              "pass":  true
+                          },
+                          {
+                              "id":  "pixels.transparentBottomRight",
+                              "expected":  "green backdrop #25C851",
+                              "observed":  {
+                                               "r":  37,
+                                               "g":  200,
+                                               "b":  81,
+                                               "a":  255
+                                           },
+                              "pass":  true
+                          },
+                          {
+                              "id":  "capture.screenPill",
+                              "expected":  "screen crop captures a non-green visible pill center",
+                              "observed":  {
+                                               "r":  246,
+                                               "g":  253,
+                                               "b":  248,
+                                               "a":  255
+                                           },
+                              "pass":  true
+                          },
+                          {
+                              "id":  "shape.width",
+                              "expected":  "220 logical px -\u003e 275 physical px +/- 2",
+                              "observed":  275,
+                              "pass":  true
+                          },
+                          {
+                              "id":  "shape.height",
+                              "expected":  "84 logical px -\u003e 105 physical px +/- 2",
+                              "observed":  105,
+                              "pass":  true
+                          }
+                      ],
+    "warnings":  [
+
+                 ],
+    "artifacts":  {
+                      "outputDir":  "D:\\Users\\cooper\\Practice-Project\\202604\\openless-test-artifacts\\windows-capsule-contract\\capsule-hitl-20260519-123635",
+                      "fullScreenshot":  "D:\\Users\\cooper\\Practice-Project\\202604\\openless-test-artifacts\\windows-capsule-contract\\capsule-hitl-20260519-123635\\screen-green-bg.png",
+                      "cropScreenshot":  "D:\\Users\\cooper\\Practice-Project\\202604\\openless-test-artifacts\\windows-capsule-contract\\capsule-hitl-20260519-123635\\capsule-host-crop.png",
+                      "printWindowScreenshot":  "D:\\Users\\cooper\\Practice-Project\\202604\\openless-test-artifacts\\windows-capsule-contract\\capsule-hitl-20260519-123635\\capsule-printwindow.png"
+                  }
+}

@@ -1,0 +1,117 @@
+﻿{
+    "artifactDir":  "D:\\Users\\cooper\\Practice-Project\\202604\\openless-test-artifacts\\capsule-gray-edge\\hitl-gate-20260519-083148",
+    "screenshot":  "D:\\Users\\cooper\\Practice-Project\\202604\\openless-test-artifacts\\capsule-gray-edge\\hitl-gate-20260519-083148\\screen-green-bg-hitl.png",
+    "crop":  "D:\\Users\\cooper\\Practice-Project\\202604\\openless-test-artifacts\\capsule-gray-edge\\hitl-gate-20260519-083148\\capsule-host-crop-hitl.png",
+    "hostRect":  {
+                     "left":  823,
+                     "top":  900,
+                     "right":  1098,
+                     "bottom":  1005,
+                     "width":  275,
+                     "height":  105
+                 },
+    "scale":  {
+                  "x":  1.25,
+                  "y":  1.25
+              },
+    "greenBackgroundRgb":  [
+                               37,
+                               200,
+                               81
+                           ],
+    "whitePillBox":  {
+                         "left":  18,
+                         "top":  32,
+                         "right":  257,
+                         "bottom":  97,
+                         "width":  240,
+                         "height":  66,
+                         "logicalWidth":  192,
+                         "logicalHeight":  52.8,
+                         "count":  14663
+                     },
+    "horizontalRoom":  {
+                           "left":  18,
+                           "right":  17,
+                           "min":  17
+                       },
+    "nonGreenBox":  {
+                        "left":  17,
+                        "top":  31,
+                        "right":  258,
+                        "bottom":  103,
+                        "width":  242,
+                        "height":  73,
+                        "count":  16167
+                    },
+    "samples":  {
+                    "top-left-corner":  {
+                                            "x":  4,
+                                            "y":  4,
+                                            "rgb":  [
+                                                        37,
+                                                        200,
+                                                        81
+                                                    ],
+                                            "distanceFromGreen":  0
+                                        },
+                    "top-right-corner":  {
+                                             "x":  270,
+                                             "y":  4,
+                                             "rgb":  [
+                                                         37,
+                                                         200,
+                                                         81
+                                                     ],
+                                             "distanceFromGreen":  0
+                                         },
+                    "bottom-left-corner":  {
+                                               "x":  4,
+                                               "y":  100,
+                                               "rgb":  [
+                                                           37,
+                                                           200,
+                                                           81
+                                                       ],
+                                               "distanceFromGreen":  0
+                                           },
+                    "bottom-right-corner":  {
+                                                "x":  270,
+                                                "y":  100,
+                                                "rgb":  [
+                                                            37,
+                                                            200,
+                                                            81
+                                                        ],
+                                                "distanceFromGreen":  0
+                                            },
+                    "left-at-pill-center":  {
+                                                "x":  4,
+                                                "y":  64,
+                                                "rgb":  [
+                                                            37,
+                                                            200,
+                                                            81
+                                                        ],
+                                                "distanceFromGreen":  0
+                                            },
+                    "right-at-pill-center":  {
+                                                 "x":  270,
+                                                 "y":  64,
+                                                 "rgb":  [
+                                                             37,
+                                                             200,
+                                                             81
+                                                         ],
+                                                 "distanceFromGreen":  0
+                                             }
+                },
+    "maxSampleDistanceFromGreen":  0,
+    "checks":  {
+                   "transparentMargins":  true,
+                   "horizontalRoomForCompactPill":  true,
+                   "compactVisualWidth":  true,
+                   "compactVisualHeight":  true,
+                   "noHostSizedGrayRect":  true
+               }
+}

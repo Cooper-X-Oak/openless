@@ -1,0 +1,22 @@
+# Credentials / secrets (never commit)
+*.env
+.env.*
+cookies.txt
+*.pem
+*.key
+*.p12
+*.pfx
+*token*
+*secret*
+
+# Temp / scratch artifacts
+.scratch/
+.temp/
+.draft/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

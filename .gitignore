@@ -1,0 +1,27 @@
+# Credentials (never commit)
+*.env
+.env.*
+cookies.txt
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*secret*
+*credential*
+*.token
+
+# Temp / scratch
+.scratch/
+.temp/
+.draft/
+
+# Dependencies / build
+node_modules/
+dist/
+build/
+target/
+
+# OS / editor
+.DS_Store
+Thumbs.db
